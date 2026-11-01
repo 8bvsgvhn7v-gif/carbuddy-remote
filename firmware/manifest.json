@@ -1,8 +1,8 @@
 {
-  "version": "0.8.1",
-  "build": 81,
+  "version": "0.8.2",
+  "build": 82,
   "boards": {
-    "lcd169": {"url": "https://8bvsgvhn7v-gif.github.io/carbuddy-remote/firmware/carbuddy-lcd169.bin", "size": 2861776, "sha256": "41ab8e89b2d6b80ab9af56331a8cf0adb354a8d22f5c718268e916e0b3a9d202"},
-    "amoled18": {"url": "https://8bvsgvhn7v-gif.github.io/carbuddy-remote/firmware/carbuddy-amoled18.bin", "size": 2875024, "sha256": "36aa19449f5669a295bca8b0aca2c859f1de706f96d882296c2178aa6381fb9a"}
+    "lcd169": {"url": "https://dziobaasty131.github.io/carbuddy-remote/firmware/carbuddy-lcd169.bin", "size": 2862544, "sha256": "8d4e1775f42427e867dc1821fd4d474ceea0bae15082e023d6467cb9165adb07"},
+    "amoled18": {"url": "https://dziobaasty131.github.io/carbuddy-remote/firmware/carbuddy-amoled18.bin", "size": 2875776, "sha256": "6e98bd28e025d5bd6016151f2d99fbfa89f74e3eac32df6cc6cef12889598c0b"}
   }
 }
