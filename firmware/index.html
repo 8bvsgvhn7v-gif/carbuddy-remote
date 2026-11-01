@@ -1,0 +1,805 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>CarBuddy – instalacja</title>
+<!-- ESP Web Tools: flashes the board from the browser over USB (Web Serial), nothing to install. -->
+<script type="module" src="https://unpkg.com/esp-web-tools@10.1.1/dist/web/install-button.js?module"></script>
+<style>
+:root{--bg:#0b0f12;--card:#151b20;--field:#0e1418;--line:#26313a;--ink:#e8f4f6;--dim:#8aa3ab;--acc:#1ee0f0;--ok:#5be38a;--bad:#ff7a6b;--warm:#ffd58a}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:17px/1.5 -apple-system,system-ui,"Segoe UI",sans-serif}
+main{max-width:640px;margin:0 auto;padding:24px 16px 48px}
+header{display:flex;align-items:center;gap:14px;margin-bottom:18px}
+canvas.buddy{display:block;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+#buddySmall{width:64px;height:44px}
+.face{background:#000;border-radius:34px;box-shadow:0 0 0 6px #1d252c,0 0 0 8px #33404a;width:min(260px,70vw);aspect-ratio:240/180;margin:14px auto 30px}
+#buddyBig{width:100%;height:100%}
+header h1{font-size:22px;margin:0}header h1 span{color:var(--acc)}
+.bar{height:6px;background:var(--card);border-radius:3px;overflow:hidden;margin-bottom:26px}.bar i{display:block;height:100%;width:0;background:var(--acc);transition:width .3s}
+.screen{display:none}.screen.on{display:block;animation:in .25s ease-out}
+@keyframes in{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+h2{font-size:26px;line-height:1.25;margin:0 0 8px}
+.lead{color:var(--dim);margin:0 0 22px}
+.choices{display:grid;gap:12px;margin-bottom:22px}
+.choice{display:block;text-align:left;width:100%;background:var(--card);color:var(--ink);border:2px solid transparent;border-radius:16px;padding:16px 18px;font:inherit;cursor:pointer}
+.choice b{display:block;font-size:18px}.choice span{color:var(--dim);font-size:15px}
+.choice:hover{border-color:var(--line)}.choice.on{border-color:var(--acc)}
+.choices.row{grid-template-columns:repeat(auto-fit,minmax(130px,1fr))}
+.nav{display:flex;gap:10px;align-items:center;margin-top:8px}
+.btn{background:var(--acc);color:#04191c;border:0;border-radius:12px;padding:13px 22px;font-weight:600;font-size:17px;line-height:1;font-family:inherit;cursor:pointer}
+.btn.ghost{background:transparent;color:var(--dim);padding:13px 8px}
+.btn:disabled{opacity:.4;cursor:default}
+esp-web-install-button button{background:var(--acc);color:#04191c;border:0;border-radius:12px;padding:15px 26px;font-weight:600;font-size:18px;line-height:1;font-family:inherit;cursor:pointer}
+.steps{counter-reset:s;list-style:none;padding:0;margin:0 0 20px}
+.steps li{counter-increment:s;position:relative;padding:0 0 14px 44px}
+.steps li::before{content:counter(s);position:absolute;left:0;top:-2px;width:30px;height:30px;border-radius:50%;background:var(--card);color:var(--acc);display:grid;place-items:center;font-weight:700}
+.tip{background:var(--card);border-radius:12px;padding:12px 14px;font-size:15px;color:var(--dim);margin:0 0 20px}
+.tip b{color:var(--ink)}
+.warn{background:#2a2112;color:var(--warm);border-radius:12px;padding:12px 14px;font-size:15px;margin-bottom:20px}
+label.f{display:flex;flex-direction:column;gap:6px;font-size:15px;color:var(--dim);margin-bottom:16px}
+input,select{background:var(--field);color:var(--ink);border:1px solid var(--line);border-radius:10px;padding:12px;font-size:17px;font-family:inherit;width:100%}
+input:focus,select:focus{outline:2px solid var(--acc);outline-offset:1px;border-color:transparent}
+.sub{font-size:15px;color:var(--dim);margin:-6px 0 10px}
+.who{font-size:15px;color:var(--acc);font-weight:600;margin:0 0 4px}
+svg.board{display:block;width:100%;max-width:420px;margin:0 auto 18px}
+#log,.log{list-style:none;padding:0;margin:0 0 20px;font-size:16px}
+#log li,.log li{padding:5px 0;color:var(--dim)}#log li.ok,.log li.ok{color:var(--ok)}#log li.bad,.log li.bad{color:var(--bad)}#log li.now,.log li.now{color:var(--ink)}
+#log li::before,.log li::before{display:inline-block;width:24px;content:"…"}#log li.ok::before,.log li.ok::before{content:"✓"}#log li.bad::before,.log li.bad::before{content:"✗"}
+.pulse{animation:pulse 1.4s ease-in-out infinite}@keyframes pulse{50%{opacity:.35}}
+</style>
+</head>
+<body><main>
+<header><canvas class="buddy" id="buddySmall" aria-label="CarBuddy"></canvas><h1>Car<span>Buddy</span> – instalacja</h1></header>
+<div class="bar"><i id="bar"></i></div>
+
+<!-- 0 -->
+<section class="screen" data-step="start">
+  <div class="face"><canvas class="buddy" id="buddyBig" aria-label="CarBuddy – kliknij go"></canvas></div>
+  <h2>Cześć! Zaraz obudzimy Twojego CarBuddy'ego.</h2>
+  <p class="lead">Poprowadzę Cię krok po kroku – to zajmie kilka minut. Potrzebujesz płytki, kabla USB-C i tego komputera.</p>
+  <div class="warn" id="nosupport" hidden>Ta przeglądarka nie potrafi połączyć się z płytką przez USB. Otwórz tę stronę w <b>Chrome</b> albo <b>Edge</b> na komputerze (Windows, macOS, Linux).</div>
+  <div class="nav"><button class="btn" data-go="board" id="startBtn">Zaczynamy</button></div>
+</section>
+
+<!-- 1 -->
+<section class="screen" data-step="board">
+  <h2>Którą płytkę masz?</h2>
+  <p class="lead">Nazwa jest na pudełku i na spodzie płytki.</p>
+  <div class="choices" data-pick="board">
+    <button class="choice" data-value="amoled18"><b>Waveshare ESP32-S3-Touch-AMOLED-1.8</b><span>Ekran AMOLED 1,8", głośnik i mikrofon</span></button>
+    <button class="choice" data-value="lcd169"><b>Waveshare ESP32-S3-Touch-LCD-1.69</b><span>Ekran LCD 1,69", buzzer</span></button>
+  </div>
+  <div class="nav"><button class="btn" data-go="mode" data-needs="board">Dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 2 -->
+<section class="screen" data-step="mode">
+  <h2>Nowy CarBuddy czy aktualizacja?</h2>
+  <p class="lead">Jeśli już na niej mieszka i chcesz go zatrzymać – wybierz aktualizację.</p>
+  <div class="choices" data-pick="mode">
+    <button class="choice" data-value="install"><b>Nowy CarBuddy</b><span>Wgrywam wszystko od zera. Jeśli coś było na płytce, zniknie.</span></button>
+    <button class="choice" data-value="update"><b>Aktualizacja</b><span>Nowa wersja, a jego charakter, wspomnienia, Wi-Fi i telefony zostają.</span></button>
+    <button class="choice" data-value="restore"><b>Przenieś z kopii</b><span>Nowa płytka, a CarBuddy z kopii – np. przesiadka z LCD na AMOLED. Zachowa charakter, wspomnienia i ustawienia.</span></button>
+  </div>
+  <div class="nav"><button class="btn" data-go="boot" data-needs="mode">Dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 3 -->
+<section class="screen" data-step="boot">
+  <h2>Przełącz płytkę w tryb wgrywania</h2>
+  <p class="lead">Dzięki temu wgrywanie zawsze się uda – nawet na zupełnie nowej albo pustej płytce.</p>
+  <svg class="board" viewBox="0 0 420 250" aria-label="Płytka z zaznaczonym przyciskiem BOOT">
+    <rect x="90" y="15" width="190" height="220" rx="34" fill="#1d252c" stroke="#33404a" stroke-width="3"/>
+    <rect x="108" y="33" width="154" height="184" rx="24" fill="#05080a"/>
+    <rect x="137" y="100" width="34" height="40" rx="10" fill="#1ee0f0"/><rect x="199" y="100" width="34" height="40" rx="10" fill="#1ee0f0"/>
+    <rect x="274" y="109" width="16" height="32" rx="6" fill="#8aa3ab"/>
+    <path d="M290 125 h40" stroke="#8aa3ab" stroke-width="6" stroke-linecap="round"/>
+    <text x="338" y="130" fill="#8aa3ab" font-size="14">USB-C</text>
+    <g data-board="amoled18"><!-- AMOLED: both buttons beside the USB-C socket -->
+      <rect x="276" y="76" width="12" height="22" rx="4" fill="#ffd58a" class="pulse"/>
+      <path d="M292 87 L318 70" stroke="#ffd58a" stroke-width="2"/>
+      <text x="322" y="72" fill="#ffd58a" font-size="17" font-weight="700">BOOT</text>
+      <rect x="276" y="152" width="12" height="22" rx="4" fill="#556470"/>
+      <path d="M292 163 L318 180" stroke="#556470" stroke-width="2"/>
+      <text x="322" y="188" fill="#8aa3ab" font-size="14">drugi (PWR)</text>
+    </g>
+    <g data-board="lcd169"><!-- LCD 1.69: the buttons on the side opposite the USB-C socket -->
+      <rect x="82" y="76" width="12" height="22" rx="4" fill="#ffd58a" class="pulse"/>
+      <path d="M78 87 L52 70" stroke="#ffd58a" stroke-width="2"/>
+      <text x="48" y="72" fill="#ffd58a" font-size="17" font-weight="700" text-anchor="end">BOOT</text>
+      <rect x="82" y="152" width="12" height="22" rx="4" fill="#556470"/>
+      <path d="M78 163 L52 180" stroke="#556470" stroke-width="2"/>
+      <text x="48" y="198" fill="#8aa3ab" font-size="14" text-anchor="end">drugi</text>
+    </g>
+  </svg>
+  <ol class="steps">
+    <li><b>Odłącz</b> kabel od płytki (jeśli jest podłączony).</li>
+    <li data-board="amoled18"><b>Przytrzymaj BOOT</b> – jeden z dwóch małych przycisków przy gnieździe USB-C. Ten z napisem <b>BOOT</b> na płytce (w obudowie CarBuddy'ego: we wgłębieniu obok kabla).</li>
+    <li data-board="lcd169"><b>Przytrzymaj BOOT</b> – jeden z dwóch małych przycisków na boku płytki, <b>po przeciwnej stronie niż gniazdo USB-C</b>. Ten z napisem <b>BOOT</b> na płytce. Jeśli płytka jest już w obudowie, zdejmij jej tył.</li>
+    <li>Trzymając BOOT, <b>podłącz kabel</b> do komputera.</li>
+    <li><b>Puść BOOT.</b> Ekran zostanie ciemny – tak ma być.</li>
+  </ol>
+  <div class="tip">Kabel musi mieć <b>transmisję danych</b> – niektóre kable służą tylko do ładowania. Jeśli płytka nie pojawi się w następnym kroku, spróbuj innego kabla albo innego portu w komputerze.</div>
+  <div class="nav"><button class="btn" data-go="flash">Zrobione</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 3a: moving him: which copy -->
+<section class="screen" data-step="source">
+  <h2>Skąd go przenosimy?</h2>
+  <p class="lead">Wybierz kopię jego pamięci: plik <b>carbuddy-kopia-….txt</b> (zapisuje go instalator przy aktualizacji albo panel: Ustawienia → Kopia zapasowa) albo kopię zapamiętaną w tej przeglądarce.</p>
+  <div class="choices">
+    <button class="choice" id="useSaved" hidden><b>Kopia z tej przeglądarki</b><span id="savedWhen"></span></button>
+    <label class="choice" for="backupFile" style="cursor:pointer"><b>Wybierz plik kopii…</b><span>Z dysku, np. z Pobranych.</span></label>
+  </div>
+  <input type="file" id="backupFile" accept=".txt,text/plain" hidden>
+  <ul id="sourceLog" class="log"></ul>
+  <p class="sub">Telefony trzeba będzie sparować jeszcze raz – parowanie należy do płytki, nie do niego.</p>
+  <div class="nav"><button class="btn" data-go="boot" id="sourceNext" disabled>Dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 3b: an update starts with a backup of his memory -->
+<section class="screen" data-step="backup">
+  <h2>Najpierw kopia jego pamięci</h2>
+  <p class="lead">Na wszelki wypadek: zapiszę jego charakter, kierowców, wspomnienia, hobby i ustawienia. Gdyby po aktualizacji czegoś brakowało, przywrócisz go jednym kliknięciem.</p>
+  <ol class="steps">
+    <li>Podłącz płytkę kablem (CarBuddy ma mieć oczy na ekranie).</li>
+    <li>Kliknij <b>Zrób kopię</b> i wybierz z listy <b>USB JTAG/serial debug unit</b>.</li>
+  </ol>
+  <div class="nav" style="margin-bottom:14px"><button class="btn" id="backupBtn">Zrób kopię</button></div>
+  <ul id="backupLog" class="log"></ul>
+  <p class="sub">Kopia zapisze się jako plik w Pobranych i zostanie też w tej przeglądarce.</p>
+  <div class="nav"><button class="btn" data-go="flash" id="backupNext" disabled>Dalej</button><button class="btn ghost" data-go="flash" id="backupSkip">Pomiń (niezalecane)</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 4 -->
+<section class="screen" data-step="flash">
+  <h2 id="flashTitle">Wgrywamy</h2>
+  <ol class="steps">
+    <li>Kliknij <b id="flashWord">Wgraj</b> poniżej.</li>
+    <li>Z listy wybierz <b>USB JTAG/serial debug unit</b> i kliknij <b>Połącz</b>.</li>
+    <li>W okienku potwierdź i poczekaj około minuty, aż pasek dojdzie do końca.</li>
+    <li>Zamknij okienko.</li>
+  </ol>
+  <div style="margin:0 0 22px">
+    <esp-web-install-button id="flasher"><button slot="activate" id="flashBtn">Wgraj</button>
+      <span slot="unsupported" class="warn" style="display:block">Ta przeglądarka nie obsługuje USB – użyj Chrome albo Edge na komputerze.</span>
+    </esp-web-install-button>
+  </div>
+  <div class="tip" id="eraseTip">Jeśli okienko zapyta <b>„Erase device”</b> – zaznacz, przy nowym CarBuddym to nic nie szkodzi.</div>
+  <div class="warn" id="keepTip"><b>Ważne:</b> okienko zapyta „Erase device” – <b>nie zaznaczaj</b> tego pola, tylko kliknij <b>Next</b>. Zaznaczone skasowałoby jego pamięć.</div>
+  <div class="tip">Płytki nie ma na liście, port miga albo wgrywanie się nie zaczyna? Odłącz kabel, przytrzymaj <b>BOOT</b>, podłącz kabel, puść BOOT i kliknij jeszcze raz.</div>
+  <div class="nav"><button class="btn" id="flashedBtn">Wgrało się – dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 5 -->
+<section class="screen" data-step="ask">
+  <h2>Ustawimy go teraz?</h2>
+  <p class="lead">Powiesz mu, kto z nim jeździ i gdzie mieszkacie. Zmienisz to później w panelu.</p>
+  <div class="choices">
+    <button class="choice" data-go="drivers"><b>Tak, ustawmy</b><span>Kilka krótkich pytań.</span></button>
+    <button class="choice" data-go="replug" id="skipSettings"><b>Nie, zostaw jak jest</b><span>Od razu do końca.</span></button>
+  </div>
+  <div class="nav"><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 6 -->
+<section class="screen" data-step="drivers">
+  <h2>Ile osób będzie nim jeździć?</h2>
+  <p class="lead">Kierowców rozpoznaje po telefonie. Każdego wita inaczej i każdego z osobna poznaje. Może ich być najwyżej czterech.</p>
+  <div class="choices row" data-pick="count">
+    <button class="choice" data-value="1"><b>Tylko ja</b><span>1 kierowca</span></button>
+    <button class="choice" data-value="2"><b>Dwie osoby</b><span>2 kierowców</span></button>
+    <button class="choice" data-value="3"><b>Trzy osoby</b><span>3 kierowców</span></button>
+    <button class="choice" data-value="4"><b>Cztery osoby</b><span>4 kierowców</span></button>
+  </div>
+  <div class="nav"><button class="btn" data-go="person0" data-needs="count">Dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- one screen per driver (up to 4), built by the script -->
+<div id="personScreens"></div>
+
+<!-- 9 -->
+<section class="screen" data-step="home">
+  <h2>Gdzie jeździcie?</h2>
+  <label class="f">Święta z kalendarza
+    <select name="country"><option value="pl">Polska</option><option value="de">Niemcy</option><option value="uk">Wielka Brytania</option><option value="us">USA</option><option value="other">inny kraj</option></select>
+  </label>
+  <p class="sub">Na święta się przebiera – Mikołajki, Halloween, Wigilia…</p>
+  <label class="f">Ostrzeżenia drogowe z
+    <select name="nav"><option value="yanosik">Yanosika</option><option value="waze">Waze</option><option value="both">Yanosika i Waze</option></select>
+  </label>
+  <p class="sub">Odgrywa je: fotoradar, policja, korek. Powiadomienia przychodzą z Twojego telefonu.</p>
+  <label class="f">Co ma na głowie
+    <select name="accessory"><option value="">nic – sama głowa</option></select>
+  </label>
+  <p class="sub">Jeśli wydrukowałeś mu akcesorium – zauważy je.</p>
+  <label class="f">Dźwięki
+    <select name="mode"><option value="normal">włączone</option><option value="quiet">bez dźwięku</option></select>
+  </label>
+  <div class="nav"><button class="btn" data-go="wifi">Dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 10 -->
+<section class="screen" data-step="wifi">
+  <h2>Wi-Fi do aktualizacji</h2>
+  <p class="lead">Z Wi-Fi sam pobiera nowe wersje (np. z domowej sieci, gdy auto stoi pod domem). Możesz pominąć.</p>
+  <label class="f">Nazwa sieci<input name="ssid" maxlength="32" autocomplete="off"></label>
+  <label class="f">Hasło<input name="pass" type="password" maxlength="64" autocomplete="off"></label>
+  <p class="sub">Hasło trafia kablem tylko na płytkę. Ta strona nigdzie go nie wysyła ani nie zapamiętuje.</p>
+  <div class="nav"><button class="btn" data-go="replug">Dalej</button><button class="btn ghost" data-go="replug" id="skipWifi">Pomiń</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 11 -->
+<section class="screen" data-step="replug">
+  <h2>Obudź go</h2>
+  <ol class="steps">
+    <li><b>Odłącz</b> kabel od płytki.</li>
+    <li><b>Podłącz go z powrotem</b> – tym razem <b>bez</b> trzymania BOOT.</li>
+    <li>Poczekaj, aż na ekranie pojawią się oczy.</li>
+  </ol>
+  <p class="lead" id="replugNote">Potem kliknij przycisk – przekażę mu ustawienia i sprawdzę, czy wszystko dotarło.</p>
+  <ul id="log"></ul>
+  <div class="nav"><button class="btn" id="applyBtn">Ma oczy – dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>
+
+<!-- 12 -->
+<section class="screen" data-step="done">
+  <h2>Gotowe! 🎉</h2>
+  <p class="lead" id="doneLead">CarBuddy jest gotowy do drogi.</p>
+  <ol class="steps">
+    <li>Zamocuj go w aucie i podłącz do USB.</li>
+    <li>Sparuj telefon: na iPhonie wejdź w Ustawienia → Bluetooth → CarBuddy. Pierwszy telefon paruje się od razu; każdy kolejny – gdy przytrzymasz palec na ekranie CarBuddy'ego przez 10 sekund (albo w <a href="../panel/" style="color:var(--acc)">panelu</a>). Po telefonie rozpozna kierowcę i pokaże powiadomienia i ostrzeżenia.</li>
+    <li>Nic więcej nie musisz robić. Resztę nauczy się sam.</li>
+  </ol>
+  <div class="warn" id="lostWarn" hidden><b>Wygląda na to, że jego pamięć zniknęła.</b> Przywróć ją z kopii zrobionej przed aktualizacją – po przywróceniu uruchomi się ponownie.</div>
+  <ul id="restoreLog" class="log"></ul>
+  <div class="nav"><button class="btn" id="restoreBtn" hidden>Przywróć z kopii</button><button class="btn ghost" data-go="start" id="again">Zainstaluj kolejnego</button></div>
+</section>
+</main>
+<script>
+"use strict";
+const $ = s => document.querySelector(s), $$ = s => [...document.querySelectorAll(s)];
+const ESPRESSIF = 0x303a;  // USB vendor of the ESP32-S3's own USB port
+const STYLE = {  // relation styles in the firmware (behavior/Relation.h): U <person> <index>
+  buddy: [0, "Kumpel", "Luz, żarty, przybija piątkę."],
+  crush: [1, "Czule", "Podrywa: kokardka, kwiatek z ogródka, serduszka, czasem buziak."],
+  neutral: [2, "Uprzejmie", "Miły, ale bez czułości."],
+  shy: [3, "Nieśmiało", "Lubi, ale się wstydzi i zerka ukradkiem."],
+};
+const STYLE_NAMES = ["buddy", "crush", "neutral", "shy"];
+
+// --- A little CarBuddy: the eyes follow the cursor, blink, and react when clicked ----------------------
+// Drawn like on the board: rounded cyan eyes, a little darker toward the rim. Each click picks one
+// reaction at random (no fixed order); poking him a lot in a row makes him grumpier.
+const buddies = [];
+const pointer = { x: null, y: null, at: 0 };
+addEventListener("pointermove", e => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.at = performance.now(); }, { passive: true });
+addEventListener("pointerdown", e => { pointer.x = e.clientX; pointer.y = e.clientY; pointer.at = performance.now(); }, { passive: true });
+const ease = t => t < 0 ? 0 : t > 1 ? 1 : t * t * (3 - 2 * t);
+const REACTIONS = {  // length (s) and how the eyes change over the reaction (0..1, in and out)
+  happy: 1.7, angry: 1.6, surprised: 1.1, roll: 1.5, love: 1.8,
+};
+class Buddy {
+  constructor(canvas, big) {
+    this.c = canvas; this.g = canvas.getContext("2d"); this.big = big;
+    this.gx = 0; this.gy = 0; this.tx = 0; this.ty = 0;
+    this.blinkAt = 0; this.nextBlink = performance.now() + 1500 + Math.random() * 2500;
+    this.react = null; this.reactAt = 0; this.pokes = []; this.last = "";
+    this.idleAt = performance.now() + 3000;
+    canvas.addEventListener("click", () => this.poke());
+    buddies.push(this);
+  }
+  blink() { this.blinkAt = performance.now(); }
+  poke() {
+    const now = performance.now();
+    this.pokes = this.pokes.filter(t => now - t < 4000); this.pokes.push(now);
+    const annoyed = Math.min(1, (this.pokes.length - 1) / 4);  // the 5th poke within 4 s: surely angry
+    const weights = { happy: 4 * (1 - annoyed), angry: 2 + 6 * annoyed, surprised: 1.5, roll: 1 + annoyed, love: 1.2 * (1 - annoyed) };
+    delete weights[this.last];  // never the same twice in a row
+    let r = Math.random() * Object.values(weights).reduce((a, b) => a + b, 0);
+    for (const [k, w] of Object.entries(weights)) { if ((r -= w) <= 0) { this.react = k; break; } }
+    this.last = this.react; this.reactAt = now;
+  }
+  frame(now) {
+    const { c, g } = this, dpr = devicePixelRatio || 1, W = c.clientWidth, H = c.clientHeight;
+    if (!W) return;
+    if (c.width !== Math.round(W * dpr)) { c.width = Math.round(W * dpr); c.height = Math.round(H * dpr); }
+    g.setTransform(dpr, 0, 0, dpr, 0, 0); g.clearRect(0, 0, W, H);
+    // Where to look: at the cursor, else now and then somewhere around.
+    const r = c.getBoundingClientRect();
+    if (pointer.x != null && now - pointer.at < 6000) {
+      const dx = pointer.x - (r.left + W / 2), dy = pointer.y - (r.top + H / 2), reach = this.big ? 260 : 380;
+      this.tx = Math.max(-1, Math.min(1, dx / reach)); this.ty = Math.max(-1, Math.min(1, dy / reach));
+    } else if (now > this.idleAt) {
+      this.tx = (Math.random() * 2 - 1) * 0.7; this.ty = (Math.random() * 2 - 1) * 0.4;
+      this.idleAt = now + 1200 + Math.random() * 2800;
+    }
+    // The reaction of the moment.
+    let k = 0, kind = this.react, rt = 0;
+    if (kind) {
+      rt = (now - this.reactAt) / 1000; const len = REACTIONS[kind];
+      if (rt > len) { this.react = null; kind = null; }
+      else k = ease(rt / 0.18) * (1 - ease((rt - len + 0.3) / 0.3));
+    }
+    let tx = this.tx, ty = this.ty;
+    if (kind === "roll") { const a = Math.PI * 0.5 + (rt / REACTIONS.roll) * Math.PI * 2; tx = Math.cos(a) * 0.8 * k + tx * (1 - k); ty = -Math.abs(Math.sin(a)) * 0.9 * k + ty * (1 - k); }
+    if (kind === "angry") { tx *= 1 - k; ty = ty * (1 - k) + 0.15 * k; }
+    this.gx += (tx - this.gx) * 0.14; this.gy += (ty - this.gy) * 0.14;
+    // Blinks.
+    if (now > this.nextBlink) { this.blinkAt = now; this.nextBlink = now + 2200 + Math.random() * 4000 + (Math.random() < 0.15 ? -1800 : 0); }
+    const bt = (now - this.blinkAt) / 150, blink = bt >= 0 && bt < 1 ? Math.sin(bt * Math.PI) : 0;
+
+    const S = this.big ? Math.min(W / 240, H / 180) : Math.min(W / 190, H / 96), cx = W / 2, cy = H / 2;
+    let ew = 64 * S, eh = 72 * S, gap = 44 * S, lift = 0, shake = 0;
+    if (kind === "surprised") { ew *= 1 + 0.18 * k; eh *= 1 + 0.22 * k; lift = -6 * S * k; }
+    if (kind === "happy") lift = (-5 - 4 * Math.abs(Math.sin(rt * 9))) * S * k;
+    if (kind === "love") lift = -3 * S * Math.abs(Math.sin(rt * 6)) * k;
+    if (kind === "angry") { shake = Math.sin(rt * 46) * 2.2 * S * k * (rt < 0.6 ? 1 : 0.3); eh *= 1 - 0.12 * k; }
+    for (const side of [-1, 1]) {
+      const near = 1 + 0.10 * this.gx * side;  // the eye on the side he looks toward is a bit bigger
+      const w = ew * near, h = eh * near * (1 - 0.92 * blink);
+      const x = cx + side * (gap / 2 + ew / 2) + this.gx * 26 * S + shake, y = cy + this.gy * 22 * S + lift;
+      this.eye(g, x, y, w, h, Math.min(w, h) * 0.32, kind === "love" ? k : 0);
+      // Lids cut the eye's own shape away (transparent) - nothing dark is ever drawn over the eyes.
+      g.save(); g.globalCompositeOperation = "destination-out"; g.fillStyle = "#000";
+      if (kind === "happy" && k > 0) {  // the lower lid pushes up into a smiling arc
+        g.beginPath(); g.ellipse(x, y + h * 0.62, w * 0.75, h * 0.62 * k, 0, 0, Math.PI * 2); g.fill();
+      }
+      if (kind === "angry" && k > 0) {  // the top lid slants down toward the middle
+        const inner = x - side * w / 2, outer = x + side * w / 2, top = y - h / 2 - 2;
+        g.beginPath(); g.moveTo(outer + side * 4, top - 4); g.lineTo(inner - side * 4, top - 4);
+        g.lineTo(inner - side * 4, top + h * 0.55 * k); g.lineTo(outer + side * 4, top + h * 0.08 * k); g.closePath(); g.fill();
+      }
+      if (kind === "roll" && k > 0) {  // half-closed, unimpressed
+        g.fillRect(x - w, y - h / 2 - 4, w * 2, h * 0.38 * k + 4);
+      }
+      g.restore();
+    }
+  }
+  eye(g, x, y, w, h, rad, love) {
+    const grad = g.createRadialGradient(x, y - h * 0.1, Math.min(w, h) * 0.15, x, y, Math.max(w, h) * 0.62);
+    const mix = (a, b) => a.map((v, i) => Math.round(v + (b[i] - v) * love));
+    const c1 = mix([60, 236, 248], [255, 120, 190]), c2 = mix([22, 168, 190], [200, 60, 130]);
+    grad.addColorStop(0, `rgb(${c1})`); grad.addColorStop(1, `rgb(${c2})`);
+    g.fillStyle = grad;
+    g.beginPath(); g.roundRect(x - w / 2, y - h / 2, w, Math.max(h, 1), Math.min(rad, h / 2)); g.fill();
+  }
+}
+new Buddy($("#buddySmall"), false);
+new Buddy($("#buddyBig"), true);
+(function loop(now) { buddies.forEach(b => b.frame(now)); requestAnimationFrame(loop); })(performance.now());
+
+// --- State (remembered in this browser, except the Wi-Fi password) ---------------------------------
+const KEEP = "carbuddy-installer-2";
+let S = { board: "", mode: "", count: "", people: [{}, {}, {}, {}], country: "pl", nav: "yanosik", sound: "normal", ssid: "", configure: false };
+try { Object.assign(S, JSON.parse(localStorage.getItem(KEEP) || "{}")); } catch {}
+let pass = "";
+const save = () => { try { localStorage.setItem(KEEP, JSON.stringify(S)); } catch {} };
+
+// --- Screens -----------------------------------------------------------------------------------------
+const DRIVERS = 4;
+const ACCESSORIES = [["angel", "Angel (Lilo i Stitch)"], ["antenka", "Antenka"], ["batman", "Batman"], ["cinnamoroll", "Cinnamoroll"], ["crash", "Crash Bandicoot"], ["cthulhu", "Cthulhu"], ["mikolaj", "Czapka Mikołaja"], ["czapkazdaszkiem", "Czapka z daszkiem"], ["czapkazesmiglem", "Czapka ze śmigłem"], ["dobby", "Dobby"], ["dynia", "Dynia"], ["eevee", "Eevee"], ["goku", "Goku"], ["hellokitty", "Hello Kitty"], ["astronauta", "Hełm astronauty"], ["darthvader", "Hełm Vadera"], ["jednorozec", "Jednorożec"], ["gandalf", "Kapelusz Gandalfa"], ["heisenberg", "Kapelusz Heisenberga"], ["senna", "Kask Ayrtona Senny"], ["ferrari", "Kask F1 Ferrari"], ["kaskrajdowy", "Kask rajdowy"], ["peakyblinders", "Kaszkiet (Peaky Blinders)"], ["kocieuszy", "Kocie uszy"], ["kokardka", "Kokardka"], ["korona", "Korona"], ["kuromi", "Kuromi"], ["wiedzmin", "Miecze Wiedźmina"], ["osmiornica", "Ośmiornica"], ["panda", "Panda"], ["pepe", "Pepe"], ["pszczolka", "Pszczółka"], ["pusheen", "Pusheen"], ["hellboy", "Rogi Hellboya"], ["luffy", "Słomkowy kapelusz (One Piece)"], ["sonic", "Sonic"], ["spyro", "Spyro"], ["szczerbatek", "Szczerbatek"], ["tiaraprzydzialu", "Tiara Przydziału"], ["toad", "Toad (Mario)"], ["totoro", "Totoro"], ["jacksparrow", "Trikorn Jacka Sparrowa"], ["grogu", "Uszy Grogu"], ["krolik", "Uszy królika"], ["mis", "Uszy misia"], ["pikachu", "Uszy Pikachu"], ["shrek", "Uszy Shreka"], ["stitch", "Uszy Stitcha"], ["marge", "Włosy Marge Simpson"], ["zabka", "Żabka"]];
+const order = ["start", "board", "mode", "source", "boot", "backup", "flash", "ask", "drivers", "person0", "person1", "person2", "person3", "home", "wifi", "replug", "done"];
+const history = [];
+let current = "start";
+function show(step, back = false) {
+  // An update needs no BOOT: the CarBuddy running on the board lets the installer in by itself.
+  if (step === "boot" && S.mode === "update") step = back ? "mode" : "backup";
+  if (step === "boot" && S.mode === "restore" && !restoreLines && !back) step = "source";  // which copy first
+  if (step === "ask" && S.mode === "restore") step = back ? "flash" : "replug";  // his settings come with him
+  const who = /^person(\d)$/.exec(step), count = +S.count || 1;
+  if (who && +who[1] >= count) step = back ? `person${count - 1}` : "home";  // past the last driver
+  if (!back && current !== step) history.push(current);
+  current = step;
+  $$(".screen").forEach(s => s.classList.toggle("on", s.dataset.step === step));
+  $("#bar").style.width = (100 * order.indexOf(step) / (order.length - 1)) + "%";
+  window.scrollTo({ top: 0 });
+  enter(step);
+  buddies.forEach(b => b.blink());
+}
+document.addEventListener("click", e => {
+  const go = e.target.closest("[data-go]"), back = e.target.closest("[data-back]");
+  if (go && !go.disabled) show(go.dataset.go);
+  if (back) show(history.pop() || "start", true);
+});
+
+// Single-choice lists.
+function paintPicks() {
+  $$("[data-pick]").forEach(list => {
+    const key = list.dataset.pick;
+    [...list.children].forEach(c => c.classList.toggle("on", String(S[key]) === c.dataset.value));
+  });
+  $$("[data-needs]").forEach(b => { b.disabled = !S[b.dataset.needs]; });
+}
+$$("[data-pick]").forEach(list => list.addEventListener("click", e => {
+  const c = e.target.closest(".choice"); if (!c) return;
+  S[list.dataset.pick] = c.dataset.value; save(); paintPicks();
+}));
+
+// One screen per driver.
+$("#personScreens").innerHTML = [0, 1, 2, 3].map(p => `
+<section class="screen" data-step="person${p}">
+  <p class="who">${["Pierwsza", "Druga", "Trzecia", "Czwarta"][p]} osoba</p>
+  <h2>${p ? `A ${["", "druga", "trzecia", "czwarta"][p]} osoba?` : "Kto z nim jeździ?"}</h2>
+  <label class="f">Imię<input data-p="${p}" data-k="name" maxlength="22" autocomplete="off" placeholder="np. Ania"></label>
+  <p class="sub" style="margin-top:-10px">Tego imienia użyje w panelu i w urodziny.</p>
+  <div class="f" style="font-size:15px;color:var(--dim);margin-bottom:8px">Ta osoba to</div>
+  <div class="choices row" data-person="${p}" data-k="gender">
+    <button class="choice" data-value="f"><b>Kobieta</b></button>
+    <button class="choice" data-value="m"><b>Mężczyzna</b></button>
+    <button class="choice" data-value="x"><b>Nie podaję</b></button>
+  </div>
+  <div class="f" style="font-size:15px;color:var(--dim);margin-bottom:8px">Jak ma się zachowywać przy tej osobie</div>
+  <div class="choices" data-person="${p}" data-k="style">
+    ${Object.entries(STYLE).map(([k, [, t, d]]) => `<button class="choice" data-value="${k}"><b>${t}</b><span>${d}</span></button>`).join("")}
+  </div>
+  <label class="f">Urodziny (opcjonalnie)
+    <span style="display:flex;gap:10px">
+      <select data-p="${p}" data-k="day"><option value="">dzień</option>${Array.from({ length: 31 }, (_, i) => `<option>${i + 1}</option>`).join("")}</select>
+      <select data-p="${p}" data-k="month"><option value="">miesiąc</option>${["stycznia","lutego","marca","kwietnia","maja","czerwca","lipca","sierpnia","września","października","listopada","grudnia"].map((m, i) => `<option value="${i + 1}">${m}</option>`).join("")}</select>
+    </span>
+  </label>
+  <p class="sub">W urodziny przygotuje niespodziankę.</p>
+  <div class="nav"><button class="btn" data-go="person${p + 1}">Dalej</button><button class="btn ghost" data-back>Wstecz</button></div>
+</section>`).join("");
+
+function paintPeople() {
+  $$("[data-person]").forEach(list => {
+    const d = S.people[+list.dataset.person] || {};
+    [...list.children].forEach(c => c.classList.toggle("on", d[list.dataset.k] === c.dataset.value));
+  });
+}
+$$("[data-person]").forEach(list => list.addEventListener("click", e => {
+  const c = e.target.closest(".choice"); if (!c) return;
+  const d = S.people[+list.dataset.person] ||= {};
+  d[list.dataset.k] = c.dataset.value;
+  // The gender suggests a style (tender with women, a mate with men); the owner can pick another.
+  if (list.dataset.k === "gender" && !d.styleChosen) d.style = c.dataset.value === "f" ? "crush" : "buddy";
+  if (list.dataset.k === "style") d.styleChosen = true;
+  save(); paintPeople();
+}));
+$$("[data-p]").forEach(input => {
+  const d = S.people[+input.dataset.p] || {};
+  if (d[input.dataset.k]) input.value = d[input.dataset.k];
+  input.addEventListener("input", () => { (S.people[+input.dataset.p] ||= {})[input.dataset.k] = input.value; save(); });
+});
+{ const e = document.querySelector("[name=accessory]");
+  for (const [k, n] of ACCESSORIES) { const o = document.createElement("option"); o.value = k; o.textContent = n; e.append(o); }
+  e.value = S.accessory || ""; e.addEventListener("change", () => { S.accessory = e.value; save(); }); }
+for (const k of ["country", "nav"]) { const e = document.querySelector(`[name=${k}]`); e.value = S[k]; e.addEventListener("change", () => { S[k] = e.value; save(); }); }
+{ const e = document.querySelector("[name=mode]"); e.value = S.sound; e.addEventListener("change", () => { S.sound = e.value; save(); }); }
+{ const e = document.querySelector("[name=ssid]"); e.value = S.ssid; e.addEventListener("input", () => { S.ssid = e.value; save(); }); }
+document.querySelector("[name=pass]").addEventListener("input", e => { pass = e.target.value; });
+
+$("[data-go=drivers]").addEventListener("click", () => { S.configure = true; save(); });
+$("#skipSettings").addEventListener("click", () => { S.configure = false; save(); });
+$("#skipWifi").addEventListener("click", () => { S.ssid = ""; pass = ""; $("[name=ssid]").value = ""; $("[name=pass]").value = ""; save(); });
+$("#again").addEventListener("click", () => { history.length = 0; });
+
+function enter(step) {
+  if (step === "source") {
+    const b = savedBackup();
+    $("#useSaved").hidden = !b;
+    if (b) $("#savedWhen").textContent = `Zapisana ${new Date(b.when).toLocaleString("pl-PL")}, ${b.entries} wpisów.`;
+  }
+  paintPicks(); paintPeople();
+  $$("[data-board]").forEach(e => { e.style.display = e.dataset.board === (S.board || "amoled18") ? "" : "none"; });
+  if (step === "flash") {
+    const install = S.mode !== "update";  // a new board, or one he moves to
+    // Always a fresh manifest (GitHub Pages lets the browser keep files for 10 minutes): a stale one
+    // once made an update erase the board.
+    $("#flasher").setAttribute("manifest", `${install ? "install" : "update"}-${S.board}.json?t=${Date.now()}`);
+    $("#flashBtn").textContent = install ? "Wgraj CarBuddy'ego" : "Wgraj aktualizację";
+    $("#flashWord").textContent = $("#flashBtn").textContent;
+    $("#flashTitle").textContent = install ? "Wgrywamy CarBuddy'ego" : "Wgrywamy aktualizację";
+    $("#eraseTip").hidden = !install;
+    $("#keepTip").hidden = install;
+  }
+  if (step === "replug") {
+    $("#log").innerHTML = "";
+    $("#applyBtn").textContent = S.configure ? "Ma oczy – przekaż ustawienia" : "Ma oczy – dalej";
+    $("#replugNote").hidden = !S.configure;
+    armed = S.configure || S.mode === "restore";
+    if (S.mode === "restore") { $("#replugNote").hidden = false; $("#replugNote").textContent = "Potem kliknij przycisk – wgram mu jego pamięć z kopii."; $("#applyBtn").textContent = "Ma oczy – przenieś go"; }
+  }
+}
+$("#flashedBtn").addEventListener("click", () => show("ask"));
+
+// --- Handing the settings over USB ----------------------------------------------------------------
+function plan() {
+  const steps = [], d = new Date(), z = n => String(n).padStart(2, "0");
+  steps.push(["zegar", `T ${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())} ${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}`, s => s.clock]);
+  {  // the time zone too: the screen dims at dusk where you are
+    const std = -Math.max(new Date(d.getFullYear(), 0, 1).getTimezoneOffset(), new Date(d.getFullYear(), 6, 1).getTimezoneOffset());
+    steps.push(["strefa czasowa", `@ zone ${-d.getTimezoneOffset()} ${std}`, s => s.zone === String(-d.getTimezoneOffset())]);
+  }
+  if (!S.configure) return steps;
+  const n = Math.min(DRIVERS, +S.count || 1);
+  for (let p = 0; p < n; p++) {
+    const d = S.people[p] || {}, who = (d.name || "").replace(/[\r\n|]/g, " ").trim() || (p ? "Kierowca 2" : "Kierowca 1");
+    if (d.name && d.name.trim()) steps.push([`imię: ${who}`, `@ name ${p} ${who}`, s => s.names[p] === who]);
+    if (d.style) steps.push([`${who}: ${STYLE[d.style][1].toLowerCase()}`, `U ${p} ${STYLE[d.style][0]}`, s => s.styles[p] === d.style]);
+    if (d.day && d.month) {
+      const md = `${z(+d.month)}-${z(+d.day)}`;
+      steps.push([`urodziny: ${who}`, `@ birthday ${p} ${md}`, s => s.birthdays[p] === md.replace("-", "")]);
+    }
+  }
+  steps.push(["święta: " + $("[name=country]").selectedOptions[0].text, `@ country ${S.country}`, s => s.country === S.country]);
+  steps.push(["ostrzeżenia: " + $("[name=nav]").selectedOptions[0].text, `@ nav ${S.nav}`, s => s.nav === S.nav]);
+  steps.push(["dźwięki: " + $("[name=mode]").selectedOptions[0].text, `@ mode ${S.sound}`, s => s.mode === S.sound]);
+  if (S.accessory) steps.push(["na głowie: " + $("[name=accessory]").selectedOptions[0].text, `@ accessory ${S.accessory}`, s => s.accessory === S.accessory]);
+  if (S.sound === "normal") steps.push(["wyciszenie zdjęte", "@ mute 0", s => s.muted === "0"]);
+  const ssid = (S.ssid || "").replace(/[\r\n|]/g, " ").trim();
+  if (ssid) steps.push([`Wi-Fi: ${ssid}`, `@ ota wifi ${ssid}|${pass.replace(/[\r\n]/g, "")}`, s => s.wifi === ssid]);
+  return steps;
+}
+
+const log = $("#log");
+const say = (text, cls = "now") => { const li = document.createElement("li"); li.textContent = text; li.className = cls; log.append(li); return li; };
+const sleep = ms => new Promise(r => setTimeout(r, ms));
+let busy = false, armed = false;
+
+async function pickPort(ask) {
+  const known = (await navigator.serial.getPorts()).filter(p => p.getInfo().usbVendorId === ESPRESSIF);
+  if (known.length === 1) return known[0];
+  return ask ? navigator.serial.requestPort({ filters: [{ usbVendorId: ESPRESSIF }] }) : null;
+}
+
+// Opens the board, wakes it, runs fn({send, waitFor, lines}) and closes it again.
+async function withBoard(ask, log, fn) {
+  let port;
+  try {
+    port = await pickPort(ask);
+    if (!port) return false;
+    await port.open({ baudRate: 115200, bufferSize: 65536 });
+  } catch (e) {
+    const li = document.createElement("li"); li.className = "bad";
+    li.textContent = e.name === "NotFoundError" ? "Wybierz płytkę z listy (USB JTAG/serial debug unit)."
+                   : e.name === "InvalidStateError" ? "Port jest zajęty – zamknij inne karty z panelem i spróbuj jeszcze raz."
+                   : `Nie udało się połączyć: ${e.message || e}`;
+    log.append(li);
+    return false;
+  }
+  const writer = port.writable.getWriter(), reader = port.readable.getReader(), enc = new TextEncoder(), lines = [];
+  let open = true;
+  (async () => {
+    const dec = new TextDecoder(); let buf = "";
+    try {
+      while (open) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) { lines.push(buf.slice(0, nl).trim()); buf = buf.slice(nl + 1); }
+      }
+    } catch {}
+  })();
+  const send = text => writer.write(enc.encode(text + "\n"));
+  const waitFor = async (test, ms, from = 0, resend) => {
+    const until = Date.now() + ms; let next = 0;
+    while (Date.now() < until) {
+      const hit = lines.slice(from).find(test); if (hit) return hit;
+      if (resend && Date.now() >= next) { await send(resend); next = Date.now() + 1500; }
+      await sleep(100);
+    }
+    return null;
+  };
+  try {
+    return await fn({ send, waitFor, lines });
+  } finally {
+    open = false;
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock(); writer.releaseLock(); } catch {}
+    try { await port.close(); } catch {}
+  }
+}
+
+// His whole memory as the panel's "save to file" writes it ("# export": [soul] lines).
+const BACKUP_KEY = "carbuddy-installer-backup";
+function savedBackup() { try { return JSON.parse(localStorage.getItem(BACKUP_KEY) || "null"); } catch { return null; } }
+async function exportSoul(board, log) {
+  const from = board.lines.length;
+  await board.send("# export");
+  if (!await board.waitFor(l => l.startsWith("[soul] end"), 20000, from)) return null;
+  return board.lines.slice(from).filter(l => l.startsWith("[soul] "));
+}
+async function backupNow() {
+  const log = $("#backupLog"); log.innerHTML = ""; $("#backupBtn").disabled = true;
+  const li = document.createElement("li"); li.className = "now"; li.textContent = "Łączę się z nim…"; log.append(li);
+  const ok = await withBoard(true, log, async board => {
+    if (!await board.waitFor(l => l.startsWith("[state]"), 20000, 0, "w")) {
+      li.className = "bad"; li.textContent = "Nie odpowiada. Sprawdź, czy ma oczy na ekranie, i spróbuj jeszcze raz."; return false;
+    }
+    li.textContent = "Zapisuję jego pamięć…";
+    const soul = await exportSoul(board, log);
+    if (!soul || soul.length < 3) { li.className = "bad"; li.textContent = "Kopia się nie udała – spróbuj jeszcze raz."; return false; }
+    const entries = +(/end (\d+)/.exec(soul[soul.length - 1]) || [0, 0])[1];
+    const stamp = new Date().toISOString().slice(0, 16).replace("T", "-").replace(":", "");
+    try { localStorage.setItem(BACKUP_KEY, JSON.stringify({ when: Date.now(), entries, lines: soul })); } catch {}
+    const a = document.createElement("a");
+    a.href = URL.createObjectURL(new Blob([soul.join("\n") + "\n"], { type: "text/plain" }));
+    a.download = `carbuddy-kopia-${stamp}.txt`;
+    document.body.append(a); a.click(); a.remove();
+    li.className = "ok"; li.textContent = `Kopia gotowa: ${entries} wpisów (plik ${a.download} w Pobranych).`;
+    return true;
+  });
+  $("#backupBtn").disabled = false;
+  if (ok) { $("#backupNext").disabled = false; }
+}
+$("#backupBtn").addEventListener("click", backupNow);
+
+// The copy he moves from: a file, or the one this browser kept at the last update.
+let restoreLines = null;
+function takeCopy(lines, what) {
+  const log = $("#sourceLog"); log.innerHTML = "";
+  const li = document.createElement("li");
+  const ok = lines.length > 3 && lines[0].startsWith("[soul] begin") && lines[lines.length - 1].startsWith("[soul] end") &&
+             lines.some(l => l.startsWith("[soul] p memory pers "));
+  if (!ok) { li.className = "bad"; li.textContent = "To nie wygląda na kopię CarBuddy'ego – wybierz plik carbuddy-kopia-….txt."; restoreLines = null; }
+  else {
+    restoreLines = lines;
+    li.className = "ok";
+    li.textContent = `${what}: ${+(/end (\d+)/.exec(lines[lines.length - 1]) || [0, 0])[1]} wpisów – gotowe do przeniesienia.`;
+  }
+  log.append(li);
+  $("#sourceNext").disabled = !restoreLines;
+}
+$("#backupFile").addEventListener("change", async e => {
+  const f = e.target.files[0]; if (!f) return;
+  const text = await f.text();
+  takeCopy(text.split(/\r?\n/).map(l => l.trim()).filter(l => l.startsWith("[soul] ")), `Plik ${f.name}`);
+});
+$("#useSaved").addEventListener("click", () => { const b = savedBackup(); if (b) takeCopy(b.lines, "Kopia z przeglądarki"); });
+
+// Back from the copy: the same lines, line by line ("# begin" ... "# end"); he restarts after.
+async function restoreNow() {
+  const b = savedBackup(), log = $("#restoreLog");
+  if (!b) return;
+  log.innerHTML = ""; $("#restoreBtn").disabled = true;
+  const li = document.createElement("li"); li.className = "now"; li.textContent = "Przywracam jego pamięć…"; log.append(li);
+  const ok = await withBoard(true, log, async board => {
+    if (!await board.waitFor(l => l.startsWith("[state]"), 20000, 0, "w")) { li.className = "bad"; li.textContent = "Nie odpowiada."; return false; }
+    for (const line of b.lines) {
+      const from = board.lines.length;
+      await board.send("# " + line.slice(7));
+      const want = line.startsWith("[soul] end") ? (l => l.includes("imported") || l.includes("failed"))
+                 : line.startsWith("[soul] begin") ? (l => l.includes("import started"))
+                 : (l => l === "[soul] ok" || l.includes("failed"));
+      const got = await board.waitFor(want, line.startsWith("[soul] end") ? 15000 : 4000, from);
+      if (!got || got.includes("failed")) { li.className = "bad"; li.textContent = "Przywracanie się nie udało: " + (got || "brak odpowiedzi"); return false; }
+    }
+    return true;
+  });
+  $("#restoreBtn").disabled = false;
+  if (ok) { li.className = "ok"; li.textContent = "Pamięć przywrócona. Uruchamia się ponownie – za chwilę będzie sobą."; $("#lostWarn").hidden = true; $("#restoreBtn").hidden = true; }
+}
+$("#restoreBtn").addEventListener("click", restoreNow);
+
+async function handOver(ask) {
+  if (busy) return;
+  busy = true; $("#applyBtn").disabled = true; log.innerHTML = "";
+  let port;
+  try {
+    port = await pickPort(ask);
+    if (!port) return;
+    await port.open({ baudRate: 115200, bufferSize: 65536 });
+  } catch (e) {
+    if (e.name === "NotFoundError") say("Wybierz płytkę z listy (USB JTAG/serial debug unit).", "bad");
+    else say(e.name === "InvalidStateError" ? "Port jest zajęty – zamknij okienko instalatora i inne karty z panelem, potem spróbuj jeszcze raz."
+                                            : `Nie udało się połączyć: ${e.message || e}`, "bad");
+    port = null;
+    return;
+  } finally {
+    if (!port) { busy = false; $("#applyBtn").disabled = false; }
+  }
+  const writer = port.writable.getWriter(), reader = port.readable.getReader(), enc = new TextEncoder(), lines = [];
+  let open = true;
+  (async () => {
+    const dec = new TextDecoder(); let buf = "";
+    try {
+      while (open) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) { lines.push(buf.slice(0, nl).trim()); buf = buf.slice(nl + 1); }
+      }
+    } catch {}
+  })();
+  const send = text => writer.write(enc.encode(text + "\n"));
+  const waitFor = async (test, ms, from = 0, resend) => {
+    const until = Date.now() + ms; let next = 0;
+    while (Date.now() < until) {
+      const hit = lines.slice(from).find(test); if (hit) return hit;
+      if (resend && Date.now() >= next) { await send(resend); next = Date.now() + 1500; }
+      await sleep(100);
+    }
+    return null;
+  };
+  try {
+    const wake = say("Witam się z nim…");
+    if (!await waitFor(l => l.startsWith("[state]"), 30000, 0, "w")) {
+      wake.className = "bad";
+      wake.textContent = "Nie odpowiada. Odłącz i podłącz kabel (bez BOOT), poczekaj na oczy i kliknij jeszcze raz.";
+      return;
+    }
+    wake.className = "ok"; wake.textContent = "Obudził się";
+    const steps = plan();
+    for (const [, command] of steps) { await send(command); await sleep(350); }
+    const from = lines.length;
+    for (const q of ["@ app", "U", "@ festive", "@ zone", "@ ota"]) { await send(q); await sleep(400); }
+    await waitFor(l => l.startsWith("[ota] version="), 4000, from);
+    const field = (line, key) => { const m = new RegExp(`(?:^|\\s)${key}=(\\S*)`).exec(line || ""); return m ? m[1] : null; };
+    const s = { names: [], styles: [], birthdays: [], clock: lines.includes("[rtc] clock set") };
+    for (const l of lines.slice(from)) {
+      if (l.startsWith("[driver] p=")) s.names[+field(l, "p")] = l.slice(l.indexOf(" name=") + 6).trim();
+      if (l.startsWith("[relation] p=")) s.styles[+field(l, "p")] = field(l, "style");
+      if (l.startsWith("[settings]")) { s.mode = field(l, "mode"); s.nav = field(l, "nav"); s.muted = field(l, "muted"); }
+      if (l.startsWith("[festive]")) { s.country = field(l, "country"); (field(l, "birthdays") || "").split(",").forEach((b, p) => { s.birthdays[p] = b; }); }
+      if (l.startsWith("[sun] zone=")) s.zone = field(l, "zone");
+      if (l.startsWith("[acc] wearing=")) s.accessory = l.slice(14).trim();
+      if (l.startsWith("[ota] version=")) { const a = l.indexOf(" wifi="), b = l.indexOf(" msg="); s.wifi = a >= 0 ? l.slice(a + 6, b > a ? b : undefined) : null; }
+    }
+    let bad = 0;
+    for (const [what, , check] of steps) { const ok = check(s) !== false; if (!ok) bad++; say(what, ok ? "ok" : "bad"); }
+    if (bad) { say("Coś nie dotarło – kliknij jeszcze raz.", "bad"); return; }
+    if (S.mode === "restore" && restoreLines) {
+      const moving = say("Przenoszę jego pamięć…");
+      for (const line of restoreLines) {
+        const from3 = lines.length;
+        await send("# " + line.slice(7));
+        const want = line.startsWith("[soul] end") ? (l => l.includes("imported") || l.includes("failed"))
+                   : line.startsWith("[soul] begin") ? (l => l.includes("import started"))
+                   : (l => l === "[soul] ok" || l.includes("failed"));
+        const got = await waitFor(want, line.startsWith("[soul] end") ? 15000 : 4000, from3);
+        if (!got || got.includes("failed")) { moving.className = "bad"; moving.textContent = "Przeniesienie się nie udało: " + (got || "brak odpowiedzi") + ". Kliknij jeszcze raz."; return; }
+      }
+      moving.className = "ok"; moving.textContent = "Jest u siebie: charakter, wspomnienia i ustawienia przeniesione. Uruchamia się ponownie.";
+      armed = false;
+      $("#doneLead").textContent = "CarBuddy przeprowadził się na nową płytkę. Sparuj jeszcze telefon – i w drogę.";
+      $("#lostWarn").hidden = true; $("#restoreBtn").hidden = true;
+      await sleep(1500);
+      show("done");
+      return;
+    }
+    let lost = false;
+    const b = savedBackup();
+    if (S.mode === "update" && b && b.entries > 0) {
+      const check = say("Sprawdzam, czy pamięta wszystko…");
+      const from2 = lines.length;
+      await send("# export");
+      const end = await waitFor(l => l.startsWith("[soul] end"), 20000, from2);
+      const now = end ? +(/end (\d+)/.exec(end) || [0, 0])[1] : 0;
+      lost = now < Math.max(8, b.entries * 0.6);
+      check.className = lost ? "bad" : "ok";
+      check.textContent = lost ? "Jego pamięć zniknęła – przywróć ją z kopii" : "Pamięta wszystko";
+    }
+    $("#lostWarn").hidden = !lost;
+    $("#restoreBtn").hidden = !lost;
+    armed = false;
+    const names = S.configure ? S.people.slice(0, Math.min(DRIVERS, +S.count || 1)).map(d => (d.name || "").trim()).filter(Boolean) : [];
+    $("#doneLead").textContent = names.length ? `CarBuddy już wie, że jeździ z ${names.join(" i ")}. Jest gotowy do drogi.` : "CarBuddy jest gotowy do drogi.";
+    await sleep(900);
+    show("done");
+  } finally {
+    open = false;
+    try { await reader.cancel(); } catch {}
+    try { reader.releaseLock(); writer.releaseLock(); } catch {}
+    try { await port.close(); } catch {}
+    busy = false; $("#applyBtn").disabled = false;
+  }
+}
+$("#applyBtn").addEventListener("click", () => handOver(true));
+// When he comes back on USB on the last screen, start by itself.
+if ("serial" in navigator) navigator.serial.addEventListener("connect", async e => {
+  if (current !== "replug" || !armed || busy || e.target.getInfo().usbVendorId !== ESPRESSIF) return;
+  await sleep(4000);  // let him boot
+  if (current === "replug" && armed && !busy) handOver(false);
+});
+
+if (!("serial" in navigator)) { $("#nosupport").hidden = false; $("#startBtn").disabled = true; }
+show("start");
+</script>
+</body></html>

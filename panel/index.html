@@ -1,0 +1,1951 @@
+<!doctype html>
+<html lang="pl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#000000">
+<title>CarBuddy Panel</title>
+<!--
+  CarBuddy Panel: a web page for Chrome / Edge on Windows,
+  macOS and Linux. It talks to the board over the USB cable with Web Serial, using the firmware's
+  line console (README, "Serial console") - the same commands and the same parsing as the Mac app.
+  index.html?demo simulates a board, so every part of the page can be tried without hardware.
+  Face previews: faces/*.gif + faces.json (faces/catalog.js for file://), made by build.sh.
+-->
+<style>
+:root{--bg:#000;--panel:#0b0e10;--card:#15191c;--card2:#1b2024;--line:#262d33;--ink:#eef3f5;--dim:#8a979f;--dim2:#5d686f;
+  --acc:#1ee0f0;--accInk:#02191c;--warn:#ff6b5e;--pink:#ff7ab6;--purple:#b88cff;--blue:#4ea3ff;--orange:#ffa64d;--green:#4ade80}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font:14px/1.4 -apple-system,system-ui,"Segoe UI",Roboto,sans-serif}
+body{display:flex;flex-direction:column;min-width:980px;overflow:hidden}
+button{font:inherit;border:0;border-radius:10px;padding:7px 12px;background:#262d33;color:var(--ink);cursor:pointer}
+button:hover:not(:disabled){background:#313a41}
+button:disabled{opacity:.4;cursor:default}
+button.primary{background:var(--acc);color:var(--accInk);font-weight:600}
+button.primary:hover:not(:disabled){background:#5beaf6}
+button.small{padding:5px 10px;font-size:13px}
+input[type=text],input[type=search],input[type=password],input:not([type]),select{font:inherit;background:#1b2024;color:var(--ink);border:1px solid var(--line);border-radius:9px;padding:7px 10px;outline:none;min-width:0}
+input[type=text]:focus,input[type=search]:focus,input[type=password]:focus,input:not([type]):focus,select:focus{border-color:var(--acc)}
+input[type=range]{accent-color:var(--acc);width:150px}
+h2{font-size:18px;font-weight:600;margin:0 0 10px}
+h2 .count{font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--dim);margin-left:8px;font-weight:400}
+.note{color:var(--dim);margin:0 0 10px;max-width:980px}
+.hidden{display:none!important}
+.mono{font-family:ui-monospace,Menlo,Consolas,monospace}
+
+/* Header */
+header{display:flex;align-items:center;gap:14px;padding:10px 14px;border-bottom:1px solid var(--line);background:var(--panel)}
+.eyes{display:flex;gap:5px;align-items:flex-end;height:22px;cursor:default}
+/* Asleep like on the board (Eye.cpp, Asleep): a straight line low in the eye that rises and thickens
+   with each breath (3.1 s, a short rest at the bottom). */
+.eyes i{width:16px;height:3px;border-radius:2px;background:var(--acc);box-shadow:0 0 6px #1ee0f055;
+  transition:height .45s cubic-bezier(.3,1.7,.5,1),border-radius .3s,box-shadow .3s;animation:cbSleep 3.1s linear infinite}
+@keyframes cbSleep{0%,90.3%,100%{transform:translateY(-2px);height:3px;animation-timing-function:ease-in-out}45%{transform:translateY(-6px);height:4px;animation-timing-function:ease-in-out}}
+body.online .eyes i{height:18px;border-radius:6px;box-shadow:0 0 10px #1ee0f088;animation:none;transform:none}
+body.online .eyes.glad i{animation:cbHop .9s ease-out;-webkit-mask:radial-gradient(ellipse 75% 62% at 50% 112%,transparent 97%,#000 100%);mask:radial-gradient(ellipse 75% 62% at 50% 112%,transparent 97%,#000 100%)}
+body.online .eyes.blink i{height:2px}
+@keyframes cbHop{0%{transform:none}25%{transform:translateY(-5px)}45%{transform:none}65%{transform:translateY(-3px)}100%{transform:none}}
+.brand b{display:block;font-size:16px}.brand span{color:var(--dim);font-size:12px}
+.status{display:flex;gap:18px;margin-left:auto}
+.status div{display:flex;flex-direction:column}.status small{color:var(--dim);font-size:11px}.status span{font-variant-numeric:tabular-nums}
+.banner{padding:9px 14px;background:#3a1c18;color:#ffd2cc;border-bottom:1px solid #5a2a24}
+.banner a{color:var(--acc)}
+.brand .demo-tag{font-size:11px;font-weight:600;background:var(--purple);color:#1a0f2e;border-radius:6px;padding:2px 6px;margin-left:6px;vertical-align:2px}
+
+/* Main split */
+.main{flex:1;display:grid;grid-template-columns:minmax(0,1fr) clamp(300px,30vw,440px);min-height:0}
+.left{display:flex;flex-direction:column;min-height:0;min-width:0}
+body.owner aside,body.owner #status{display:none!important}
+dialog.gate{max-width:min(520px,calc(100vw - 32px));background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:18px;padding:22px 22px 18px}
+dialog.gate::backdrop{background:#000b}
+dialog.gate h3{margin:0 0 10px;font-size:20px}
+dialog.gate p{color:var(--dim);margin:0 0 12px;line-height:1.5}dialog.gate p b{color:var(--ink)}
+dialog.gate label{display:flex;align-items:center;gap:12px;margin:16px 0 18px;cursor:pointer;color:var(--ink)}
+dialog.gate label input{appearance:none;width:44px;height:26px;border-radius:13px;background:var(--line);position:relative;flex:none;cursor:pointer;transition:background .2s;margin:0}
+dialog.gate label input::after{content:"";position:absolute;top:3px;left:3px;width:20px;height:20px;border-radius:50%;background:var(--ink);transition:transform .2s}
+dialog.gate label input:checked{background:var(--acc)}dialog.gate label input:checked::after{transform:translateX(18px);background:var(--accInk)}
+dialog.gate .btnrow{justify-content:flex-end}
+button.dev{font-weight:700;letter-spacing:.08em}
+body.owner .main{grid-template-columns:minmax(0,1fr)}
+body.owner #scroll>.panel{max-width:860px}
+nav{display:flex;flex-wrap:wrap;gap:3px;margin:12px;padding:3px;background:#1b2024;border-radius:11px}
+nav button{flex:0 0 auto;background:none;padding:6px 8px;font-size:13px;white-space:nowrap}
+nav button.on{background:#4a545c}
+.scroll{flex:1;overflow:auto;padding:0 12px 24px}
+.panel>*+*{margin-top:22px}
+
+/* Cards */
+.grid{display:grid;gap:12px}
+.actions{grid-template-columns:repeat(auto-fill,minmax(300px,1fr))}
+.acard{display:flex;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:200px}
+.acard .txt{display:flex;flex-direction:column;gap:5px;min-width:0;flex:1}
+.acard b{font-size:15px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.when small{display:block;font-size:10px;font-weight:600;color:var(--acc);letter-spacing:.04em}
+.when span{color:var(--dim)}
+.acard .go{margin-top:auto;align-self:flex-start}
+.bezel{flex:none;background:#333;padding:4px;border-radius:15px}
+.screen{display:block;background:#000;border-radius:12px;overflow:hidden;object-fit:contain}
+.acard .bezel{align-self:flex-start}
+.acard .screen{width:90px;height:105px}
+.gallery{grid-template-columns:repeat(auto-fill,minmax(190px,1fr))}
+.fcard{display:flex;flex-direction:column;gap:7px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px;min-height:440px}
+.fcard:hover{border-color:var(--acc)}
+.fcard .bezel{align-self:center;padding:6px;border-radius:24px}
+.fcard .screen{width:156px;height:182px;border-radius:18px}
+.fcard .head{display:flex;align-items:center;gap:6px}
+.badge{font:600 11px ui-monospace,Menlo,Consolas,monospace;background:var(--acc);color:var(--accInk);border-radius:5px;padding:1px 5px}
+.fcard .id{font:12px ui-monospace,Menlo,Consolas,monospace;color:var(--dim)}
+.fcard .go{margin-top:auto;width:100%}
+.pads{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:8px}
+.pads button{text-align:left;padding:11px 12px;background:var(--card);border:1px solid var(--line)}
+.pads button:hover:not(:disabled){background:var(--card2)}
+.pads button .ic{display:inline-block;width:22px;color:var(--acc)}
+.box{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px}
+.info{background:#0f3236;border-radius:10px;padding:10px 12px}
+.btnrow{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px;align-items:center}
+.btnrow button.on{background:#4a545c}
+.slots{display:grid;gap:6px;margin-top:10px}
+.slotrow{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.slotrow input{background:#15191c;color:inherit;border:1px solid #333a40;border-radius:6px;padding:4px 6px}
+
+/* Bars */
+.bars{display:flex;flex-direction:column;gap:6px}
+.barrow{display:flex;align-items:center;gap:10px}
+.barrow .lbl{width:130px;flex:none}
+.bar{width:260px;height:8px;background:#323b42;border-radius:5px;overflow:hidden;flex:none}
+.bar i{display:block;height:100%;background:var(--acc);border-radius:5px;transition:width .4s}
+.bar.purple i{background:var(--purple)}.bar.blue i{background:var(--blue)}
+.num{font-variant-numeric:tabular-nums;width:70px;text-align:right;flex:none}
+.chip{font-size:12px;font-weight:600;border-radius:20px;padding:2px 9px}
+.lv0{background:#8a979f40}.lv1{background:#4ea3ff40}.lv2{background:#ffa64d40}
+.flag{margin-top:8px}.flag.orange{color:var(--orange)}
+
+/* Relations */
+.rel{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;display:flex;flex-direction:column;gap:8px}
+.rel .top{display:flex;align-items:center;gap:12px}
+.rel .name{width:110px;font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.seg{display:flex;background:#262d33;border-radius:10px;padding:3px;gap:3px;width:360px}
+.seg button{flex:1;padding:5px 6px;background:none;font-size:13px}
+.seg button.on{background:#4a545c}
+.sliders{display:flex;gap:18px}
+.sliders label{display:flex;flex-direction:column;font-size:12px;color:var(--dim)}
+.gift{color:var(--pink);font-size:12px}
+
+/* Drawings */
+.drawings{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.dcard{display:flex;flex-direction:column;gap:3px}
+.paper{position:relative;height:130px;background:rgb(33,56,46);border-radius:10px;overflow:hidden}
+.paper canvas{width:100%;height:100%;display:block}
+.paper span{position:absolute;top:6px;right:7px;font-size:11px;color:#ffffff99;font-variant-numeric:tabular-nums}
+.dcard b{font-size:13px}.dcard small{color:var(--dim);font-size:12px}.dcard em{color:var(--dim2);font-size:11px;font-style:normal}
+
+/* Log */
+aside{display:flex;flex-direction:column;gap:6px;padding:10px;border-left:1px solid var(--line);background:var(--panel);min-height:0}
+.vscreen{display:flex;flex-direction:column;align-items:center;gap:4px;padding-bottom:6px;border-bottom:1px solid var(--line)}
+.vscreen .screen{width:150px;height:175px}.vscreen small{color:var(--dim)}
+.row{display:flex;gap:6px}.row input{flex:1}
+#log{flex:1;overflow:auto;background:#06080a;border:1px solid var(--line);border-radius:9px;padding:6px 8px;
+  font:11.5px/1.45 ui-monospace,Menlo,Consolas,monospace;color:var(--dim);user-select:text}
+#log div{white-space:pre-wrap;word-break:break-word}
+#log .out{color:#6fd3ff}#log .hl{color:var(--ink)}#log .app{color:var(--purple)}
+
+/* Dialog + toast */
+.modal{position:fixed;inset:0;background:#000a;display:flex;align-items:center;justify-content:center;z-index:10}
+.modal .dlg{background:#1b2024;border:1px solid var(--line);border-radius:14px;padding:18px 20px;width:440px;box-shadow:0 20px 60px #000}
+.modal h3{margin:0 0 8px;font-size:16px}.modal p{margin:0;color:#c7d0d5;white-space:pre-line}
+.modal .btnrow{justify-content:flex-end;margin-top:16px}
+.toast{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);background:#262d33;padding:9px 16px;border-radius:12px;opacity:0;transition:.3s;pointer-events:none;z-index:11}
+.toast.show{opacity:1}
+</style>
+</head>
+<body>
+<header>
+  <div class="eyes"><i></i><i></i></div>
+  <div class="brand"><b>CarBuddy Panel<span id="demoTag" class="demo-tag hidden">DEMO</span></b><span id="connText">Niepołączony</span></div>
+  <button class="primary" id="connect">Połącz przez USB</button>
+  <div class="status hidden" id="status">
+    <div><small>Nastrój</small><span id="stMood">–</span></div>
+    <div><small>Jazda</small><span id="stDrive">–</span></div>
+    <div><small>Mina</small><span id="stFace">–</span></div>
+    <div><small>Kierowca</small><span id="stDriver">–</span></div>
+    <div><small>FPS</small><span id="stFps">–</span></div>
+  </div>
+</header>
+<div class="banner hidden" id="noSerial">
+  Ta przeglądarka nie obsługuje Web Serial (połączenia przez kabel USB). Otwórz panel w <b>Chrome</b> albo <b>Edge</b>
+  na Windows, macOS lub Linuksie. Bez płytki możesz wypróbować <a href="?demo">tryb demo</a>.
+</div>
+<div class="main">
+  <section class="left">
+    <nav id="tabs"></nav>
+    <div class="scroll" id="scroll"></div>
+  </section>
+  <aside>
+    <div class="vscreen hidden" id="vscreen"><div class="bezel"><canvas class="screen" id="vcanvas"></canvas></div>
+      <small>Wirtualny CarBuddy – to samo, co pokazałaby płytka</small></div>
+    <div class="row"><input type="search" id="filter" placeholder="Szukaj w logu"><button id="clear">Wyczyść</button></div>
+    <div id="log"></div>
+    <div class="row"><input type="text" id="cmd" placeholder="Komenda konsoli (np. b, E 7, T 2026-10-30 12:00:00)"><button id="sendCmd">Wyślij</button></div>
+  </aside>
+</div>
+<input type="file" id="soulFile" accept=".txt,text/plain" class="hidden">
+<div class="toast" id="toast"></div>
+<script src="faces/catalog.js"></script>
+<script src="face/carbuddy-face-view.js"></script>
+<script>
+"use strict";
+const DEMO = new URLSearchParams(location.search).has("demo");
+// Three levels (remembered in this browser; "?prog" / "?dev" force one):
+//   owner - the bare minimum: drivers and settings;
+//   prog  - programmer: console, log, live readouts, every setting and debug tool, but nothing that
+//           shows his faces or plays his behaviours;
+//   dev   - everything, spoilers included (behind a warning).
+const LEVEL_KEY = "carbuddy.panel.level";
+const LEVELS = ["owner", "prog", "dev"];
+let LEVEL = "owner";
+try { const v = localStorage.getItem(LEVEL_KEY); if (LEVELS.includes(v)) LEVEL = v; } catch {}
+{ const q = new URLSearchParams(location.search); if (q.has("prog")) LEVEL = "prog"; if (q.has("dev")) LEVEL = "dev"; }
+const DEV = LEVEL === "dev";
+const $ = id => document.getElementById(id);
+
+// Small DOM builder: text always goes in as text (names come from the board).
+function el(tag, props, ...kids) {
+  const e = document.createElement(tag);
+  for (const [k, v] of Object.entries(props || {})) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k === "text") e.textContent = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "style") e.style.cssText = v;
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat()) if (c != null && c !== false) e.append(c.nodeType ? c : document.createTextNode(String(c)));
+  return e;
+}
+function toast(t) { const e = $("toast"); e.textContent = t; e.classList.add("show"); clearTimeout(toast.h); toast.h = setTimeout(() => e.classList.remove("show"), 1800); }
+
+// ---------------------------------------------------------------------------------------------
+// Polish names (from the Mac app)
+const emotionPL = {
+  "neutral": "Spokój", "happy": "Zadowolony", "sleepy": "Błogość", "curious": "Zaciekawiony", "thinking": "Zamyślony",
+  "surprised": "Zaskoczony", "love": "Zakochany", "angry": "Zły", "excited": "Podekscytowany", "confused": "Zdezorientowany",
+  "scared": "Przestraszony", "embarrassed": "Zawstydzony", "sad": "Smutny", "dizzy": "Zawroty", "ouch": "Au!",
+  "asleep": "Śpi", "bored": "Znudzony", "annoyed": "Poirytowany", "startled": "Wystraszony", "sneeze": "Kichnięcie",
+  "strain": "Napięcie", "shake-off": "Otrząsa się", "drowsy": "Senny", "petted": "Głaskany", "savor": "Rozkoszuje się",
+  "rattled": "Wstrząśnięty", "joy": "Radość ^^", "hi": "Hi!", "relaxed": "Rozluźniony", "attentive": "Uważny",
+  "waking": "Budzi się", "eyeroll": "Przewraca oczami", "queasy": "Mdli go", "scheming": "Knuje", "hiccup": "Czkawka",
+  "shy": "Nieśmiały", "reproach": "Wyrzut", "playdead": "Udaje martwego", "sleeppeek": "Jedno oko przez sen",
+  "grumpy": "Marudny", "tired": "Zmęczony", "dreamy": "Maślane oczy",
+};
+const moodPL = { "content": "Zadowolony", "cheerful": "Wesoły", "grumpy": "Marudny", "sleepy": "Śpiący", "bored": "Znudzony", "smitten": "Zauroczony" };
+const drivePL = { "parked": "parking", "stop": "światła", "jam": "korek", "city": "miasto", "highway": "autostrada", "twisty": "kręta droga" };
+
+const hobbyWhen = "Na postoju albo w czasie jazdy, kiedy ma ochotę – im bardziej go to interesuje, tym częściej.";
+// Repertoire: Polish name, preview face, what he does, when it happens.
+const actInfo = {
+  "glance": ["Zerknięcie", "curious", "Zerknięcie bez powodu (już nieużywane – rozglądaniem zajmuje się teraz system uwagi).", "—"],
+  "look at driver": ["Spojrzenie na kierowcę", "neutral", "Jak drugi pilot sprawdza, co u ciebie; czasem lekko się uśmiechnie.", "Co jakiś czas; na autostradzie rzadziej."],
+  "wink": ["Oczko", "x-wink", "Puszcza oczko.", "Tylko jako odpowiedź (np. po głaskaniu)."],
+  "daydream": ["Buja w obłokach", "thinking", "Patrzy w górę, zamyślony, czasem westchnie.", "Na postojach, kiedy się nudzi."],
+  "cold sneeze": ["Kichnięcie z zimna", "sneeze", "Brrr, a-a-apsik; rozbawiony albo zirytowany zależnie od nastroju.", "Zimno w aucie (gdy ma czujnik temperatury)."],
+  "hot, wipes sweat": ["Upał, ociera pot", "x-hot", "Ciężkie powieki, strząsa pot.", "Gorąco w aucie (gdy ma czujnik temperatury)."],
+  "bored passenger": ["Znudzony pasażer", "bored", "Wzdycha, patrzy w okno, ziewa.", "Ponad 15 minut na autostradzie albo w korku."],
+  "are we there yet": ["Daleko jeszcze?", "bored", "Ty, droga, ty… i westchnienie. Bez słów.", "Po godzinie jazdy."],
+  "warm and drowsy": ["Ciepło i sennie", "drowsy", "Oczy się kleją, potem się otrząsa.", "Ciepło i postój."],
+  "wants attention": ["Zaczepia", "excited", "Zerka na ciebie, robi minę, a jak nikt nie reaguje – zajmuje się sobą.", "Na światłach albo na postoju, gdy dawno go nie dotykałeś."],
+  "not dancing (honest)": ["Wcale nie tańczę", "x-groove", "Zaczyna się kiwać, przyłapany zamiera i udaje, że nic się nie stało.", "Gra muzyka, a on nie tańczy."],
+  "car-sick": ["Choroba lokomocyjna", "queasy", "Zielenieje, oczy się chwieją.", "Długa kręta droga."],
+  "hiccups": ["Czkawka", "hiccup", "Hik! hik! – potem zirytowany.", "Po wybojach albo po śmiechu."],
+  "random sneeze": ["Kichnięcie bez powodu", "sneeze", "Kichnięcie znikąd (już nieużywane).", "—"],
+  "highway nap": ["Drzemka na autostradzie", "drowsy", "Przysypia i nagle się budzi.", "Długa, spokojna autostrada, mało energii."],
+  "plays dead": ["Udaje martwego", "playdead", "Teatralnie „umiera”, podgląda jednym okiem i woła „mam cię!”.", "Tylko na parkingu; częściej po trasie z ostrym hamowaniem."],
+  "hide and seek": ["W chowanego", "x-hide", "Chowa się za krawędź ekranu i zerka; stuknij, żeby go znaleźć.", "Tylko na parkingu, rzadko."],
+  "scheming": ["Knuje", "scheming", "Zmrużone oko (sam z siebie już tego nie robi).", "—"],
+  "happy memory": ["Szczęśliwe wspomnienie", "excited", "Patrzy w górę, potem rozpromienia się.", "Na postoju, w dobrym humorze."],
+  "blows a kiss": ["💋 Cyfrowy buziak", "kiss", "„Cmok!” – w twoją stronę leci pikselowe serduszko, potem oczko.", "Bardzo rzadko: bardzo bliska więź z właścicielem i świetny nastrój."],
+  "hobby: butterflies": ["Hobby: motyle", "h-butterfly-0", "Bawi się z motylem: śledzi go wzrokiem, próbuje złapać, czasem motyl siada mu na oku.", hobbyWhen],
+  "hobby: stars": ["Hobby: gwiazdy", "h-stars-0", "Patrzy w gwiazdy, liczy je i czeka na spadającą.", hobbyWhen],
+  "hobby: bubbles": ["Hobby: bańki", "h-bubbles-0", "Dmucha bańki i patrzy, jak lecą i pękają.", hobbyWhen],
+  "hobby: ladybug": ["Hobby: biedronka", "h-ladybug-0", "Biedronka spaceruje po krawędzi ekranu i wchodzi mu na oko.", hobbyWhen],
+  "hobby: drawing": ["Hobby: rysowanie", "h-drawing-0", "Rysuje serce, gwiazdkę albo autoportret; z wprawą coraz równiej.", hobbyWhen],
+  "hobby: magic": ["Hobby: magia", "h-magic-0", "Czaruje gwiazdkę: znika i wraca – albo nie wychodzi.", hobbyWhen],
+  "hobby: garden": ["Hobby: ogród", "h-garden-0", "Zagląda do swojej roślinki i ją podlewa.", hobbyWhen],
+  "nightmare": ["Koszmar", "scared", "Przez sen drga, budzi się przestraszony, rozgląda, zasypia.", "Bardzo rzadko w czasie snu; częściej po nerwowej trasie."],
+};
+const moodInfo = {
+  "content": ["Zadowolony", "neutral", "Spokojna mina, bez żadnych dodatków.", "Domyślnie."],
+  "cheerful": ["Wesoły", "happy", "Większe, jasne oczy; od czasu do czasu „nuci” (podskakuje) i rzuca ci uśmiechy.", "Po miłych chwilach: dotyku, spokojnej jeździe, muzyce."],
+  "grumpy": ["Marudny", "grumpy", "Powieki do połowy, unika twojego wzroku: zerknie i zaraz odwraca oczy; wzdycha, pomrukuje.", "Seria ostrych hamowań i dziur albo gdy ktoś go ignoruje."],
+  "sleepy": ["Śpiący", "tired", "Ciężkie powieki, wzrok nisko; przysypia i się ocyka, ziewa.", "Mało energii, częściej w nocy."],
+  "bored": ["Znudzony", "bored", "Oczy nisko, wzrok w dół; wzdycha, patrzy w górę i przez okno.", "Długi postój bez zajęcia."],
+  "smitten": ["Zauroczony", "dreamy", "Maślane oczy; najczęściej patrzy na ciebie i robi powolne „kocie” mrugnięcie, czasem serduszka.", "Po długim głaskaniu albo przy kimś, kogo darzy sympatią."],
+};
+
+// ---------------------------------------------------------------------------------------------
+// The board: state parsed from its lines (as in the Mac app's Board)
+const B = {
+  connected: false,
+  emotions: [], acts: [], moods: [],
+  state: {}, hobbies: {}, garden: {}, dreams: {},
+  relations: {},                    // person -> {p, style, shy, romance, showoff, gift, name}
+  drivers: {},                      // person -> {p, active, phones, phone, name} ("@ app")
+  pairing: null,                    // {p, until}: the pairing window he has open
+  drawings: { total: 0, list: [] }, // his drawings, newest first ("o d")
+  ota: {},                          // firmware updates ("@ ota"): version, build, state, progress, new, wifi, msg
+  festive: {},                      // holidays ("@ festive"): today, showing, country, birthdays
+  accessory: "",                    // what he wears on his head ("[acc] wearing=")
+};
+let otaPoll = null;
+let pendingDrawings = [];
+let soulLines = null, soulName = null;  // his memory being exported ("# export" -> "[soul] ..." until "end")
+let soulOut = [], soulSent = 0;          // his memory being imported: lines still to send, one per "[soul] ok"
+let generation = 0;                      // bumped on every connect / disconnect: delayed sends check it
+let link = null;                         // {kind, write(text), close()}
+let poll = null;
+
+// "key=value key=value ..."; `tail` is a key that is always last and may contain spaces (a name).
+function fields(s, tail) {
+  const d = {};
+  if (tail) {
+    if (s.startsWith(tail + "=")) { d[tail] = s.slice(tail.length + 1); s = ""; }
+    else {
+      const i = s.indexOf(" " + tail + "=");
+      if (i >= 0) { d[tail] = s.slice(i + tail.length + 2).trim(); s = s.slice(0, i); }
+    }
+  }
+  for (const part of s.split(" ")) {
+    if (!part) continue;
+    const i = part.indexOf("=");
+    if (i > 0 && i < part.length - 1) d[part.slice(0, i)] = part.slice(i + 1);
+  }
+  return d;
+}
+const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+// The garden's poll reply (the other "[garden]" lines are events).
+const isGardenPoll = line => line.startsWith("[garden] planted=") && line.includes(" stage=") && !line.includes(" dry=");
+
+function send(command, quiet = false) {
+  if (!link || !B.connected) return;
+  link.write(command + "\n", command);
+  if (!quiet) append("> " + command);
+}
+// Sends after a delay, but only if still on the same connection.
+function sendLater(delay, command, quiet = false) {
+  const gen = generation;
+  setTimeout(() => { if (gen === generation && B.connected) send(command, quiet); }, delay * 1000);
+}
+
+// "[ota] version=..": msg (last) and the Wi-Fi name may both contain spaces.
+function otaFields(s) {
+  const m = s.indexOf(" msg="), msg = m >= 0 ? s.slice(m + 5) : "";
+  const d = fields(m >= 0 ? s.slice(0, m) : s, "wifi");
+  d.msg = msg;
+  return d;
+}
+
+function handle(line) {
+  if (line.startsWith("[soul] ")) { soulLine(line.slice(7)); return; }
+  if (line.startsWith("[ota] version=")) {
+    const v = otaFields(line.slice(6));
+    clearTimeout(otaPoll);  // while it's busy, ask again every 2 s for the progress
+    if (["1", "2", "3", "4"].includes(v.state)) otaPoll = setTimeout(() => send("@ ota", true), 2000);
+    if (!same(v, B.ota)) { B.ota = v; renderOta(); append(line); }
+    return;
+  }
+  if (line.startsWith("[acc] wearing=")) { B.accessory = line.slice(14).trim(); renderAccessory(); return; }
+  if (line.startsWith("[festive] today=")) { const v = fields(line.slice(10)); if (!same(v, B.festive)) { B.festive = v; renderFestive(); } append(line); return; }
+  if (line.startsWith("[bri] ")) { const v = fields(line.slice(6)); if (!same(v, B.bri)) { B.bri = v; renderBrightness(); } return; }
+  if (line.startsWith("[hobby] drawing done")) sendLater(0.5, "o d", true);  // a new drawing for the gallery
+  if (line.startsWith("[state] ")) { const v = fields(line.slice(8), "driver"); if (!same(v, B.state)) { B.state = v; renderState(); } return; }
+  if (isGardenPoll(line)) { const v = fields(line.slice(9)); if (!same(v, B.garden)) { B.garden = v; renderGarden(); } return; }
+  if (line.startsWith("[drawings] total=")) { B.drawings.total = parseInt(line.slice(17)) || 0; pendingDrawings = []; return; }
+  if (line === "[drawings] end") { B.drawings.list = pendingDrawings; pendingDrawings = []; renderDrawings(); return; }
+  if (line.startsWith("[drawing] n=")) { const d = parseDrawing(line); if (d) pendingDrawings.push(d); return; }
+  if (line.startsWith("[driver] p=")) {
+    const d = fields(line.slice(9), "name"), p = parseInt(d.p);
+    if (p >= 0 && p < PEOPLE && !same(B.drivers[p], d)) { B.drivers[p] = d; renderPhones(); }
+  }
+  {
+    const open = /^\[phone\] pairing open for driver (\d)/.exec(line), done = /^\[phone\] .* paired for driver (\d)/.exec(line);
+    if (open) { B.pairing = { p: +open[1], until: Date.now() + 120000 }; renderPhones(); setTimeout(renderPhones, 120500); }
+    if (line === "[phone] pairing window closed") { B.pairing = null; renderPhones(); }
+    if (done) { B.pairing = null; sendLater(0.5, "@ app", true); renderPhones(); toast("Telefon sparowany"); }
+  }
+  if (line.startsWith("[relation] p=")) {
+    const d = fields(line.slice(11), "name"), p = parseInt(d.p);
+    if (p >= 0 && p < PEOPLE && !same(B.relations[p], d)) { B.relations[p] = d; renderRelation(p); renderFestive(); }
+    return;
+  }
+  if (line.startsWith("[dreams] dreaming=")) { const v = fields(line.slice(9)); if (!same(v, B.dreams)) { B.dreams = v; renderDreams(); } return; }
+  if (line.startsWith("[hobbies] ")) { const v = fields(line.slice(10)); if (!same(v, B.hobbies)) { B.hobbies = v; renderHobbies(); } return; }
+  if (line.startsWith("[emotions] ")) { const v = line.slice(11).split("|").filter(Boolean); if (!same(v, B.emotions)) { B.emotions = v; updateGalleryButtons(); } }
+  if (line.startsWith("[acts] ")) { const v = line.slice(7).split("|").filter(Boolean); if (!same(v, B.acts)) { B.acts = v; renderActs(); updateGalleryButtons(); } }
+  if (line.startsWith("[moods] ")) { const v = line.slice(8).split("|").filter(Boolean); if (!same(v, B.moods)) { B.moods = v; renderMoods(); } }
+  append(line);
+}
+
+// ---------------------------------------------------------------------------------------------
+// His soul (memory export / import, see src/memory/Soul.h)
+// The computer's time zone for "@ zone": minutes from UTC now, and without summer time.
+function zoneCommand(d = new Date()) {
+  const y = d.getFullYear(), std = -Math.max(new Date(y, 0, 1).getTimezoneOffset(), new Date(y, 6, 1).getTimezoneOffset());
+  return `@ zone ${-d.getTimezoneOffset()} ${std}`;
+}
+function stamp(d = new Date()) {
+  const z = n => String(n).padStart(2, "0");
+  return { day: `${d.getFullYear()}-${z(d.getMonth() + 1)}-${z(d.getDate())}`, hm: `${z(d.getHours())}${z(d.getMinutes())}`,
+           time: `${z(d.getHours())}:${z(d.getMinutes())}:${z(d.getSeconds())}` };
+}
+function exportSoul() {
+  if (!B.connected) return;
+  const s = stamp();
+  soulLines = [];
+  soulName = `CarBuddy pamięć ${s.day} ${s.hm}.txt`;
+  append("[app] saving his memory…");
+  send("# export");
+  const gen = generation;
+  setTimeout(() => {
+    if (gen !== generation || soulLines === null) return;
+    soulLines = null;
+    tell("Nie udało się zapisać pamięci", "CarBuddy nie odpowiedział do końca. Spróbuj jeszcze raz.");
+  }, 15000);
+}
+async function importSoul(file) {
+  let text;
+  try { text = await file.text(); } catch { tell("Nie da się odczytać pliku", file.name); return; }
+  const lines = text.split(/\r?\n|\r/).map(l => l.trim()).filter(Boolean);
+  if (!(lines.length >= 2 && lines[0].startsWith("begin ") && lines[lines.length - 1].startsWith("end ") &&
+        lines.slice(1, -1).every(l => l.startsWith("p ")))) {
+    tell("To nie jest plik z jego pamięcią", file.name);
+    return;
+  }
+  const ok = await ask("Wczytać pamięć z pliku?",
+    `To, co CarBuddy przeżył na tej płytce (charakter, profile, hobby, ogródek, rysunki, sny, relacje, ustawienia), zostanie zastąpione zawartością pliku ${file.name}. Płytka uruchomi się od nowa.\n\nKalibracja montażu, sparowane telefony i hasło Wi-Fi zostają bez zmian.`,
+    "Wczytaj", "Anuluj");
+  if (!ok || !B.connected) return;
+  append(`[app] loading his memory from ${file.name} (${lines.length} lines)…`);
+  // One line at a time: the board answers each, and its receive buffer is small.
+  soulOut = lines.slice(1);
+  soulSent = 0;
+  send("# " + lines[0], true);
+  watchSoulImport(0);
+}
+function sendNextSoulLine() {
+  if (!soulOut.length) return;
+  send("# " + soulOut.shift(), true);
+  soulSent++;
+  setImportProgress();
+}
+// No answer for 5 s: the board is gone or busy; say so instead of waiting for ever.
+function watchSoulImport(progress) {
+  const gen = generation;
+  setTimeout(() => {
+    if (gen !== generation || !soulOut.length) return;
+    if (soulSent === progress) {
+      soulOut = [];
+      setImportProgress();
+      tell("Nie udało się wczytać pamięci", "CarBuddy przestał odpowiadać. Nic nie zostało zmienione – spróbuj jeszcze raz.");
+    } else watchSoulImport(soulSent);
+  }, 5000);
+}
+function soulLine(body) {
+  if (soulLines !== null) {
+    if (body.startsWith("begin ")) soulLines = [];
+    soulLines.push(body);
+    if (!body.startsWith("end ")) return;
+    const lines = soulLines;
+    soulLines = null;
+    download(soulName, lines.join("\n") + "\n");
+    append(`[app] his memory saved: ${soulName} (downloaded)`);
+    tell("Pamięć zapisana", `${soulName}\n\nCharakter, profile kierowców, hobby, ogródek, rysunki, sny, relacje, gatunki, log Yanosika i ustawienia.`);
+    return;
+  }
+  if (body.startsWith("p ")) return;  // his memory itself (with artist names): never in the log
+  if (body === "ok" || body === "import started") {
+    sendNextSoulLine();
+    if (body === "ok") return;
+  }
+  if (body.startsWith("import failed")) { soulOut = []; setImportProgress(); }
+  append("[soul] " + body);
+  if (body.startsWith("imported ")) {
+    soulOut = []; setImportProgress();
+    tell("Pamięć wczytana", "CarBuddy uruchamia się od nowa z wczytaną pamięcią.");
+  } else if (body.startsWith("import failed")) {
+    tell("Nie udało się wczytać pamięci", body.replace("import failed: ", ""));
+  }
+}
+function setImportProgress() {
+  const e = $("importProgress");
+  if (!e) return;
+  const total = soulSent + soulOut.length;
+  e.textContent = soulOut.length ? `Wczytywanie pamięci: ${soulSent} / ${total} linii…` : "";
+}
+function download(name, text) {
+  const url = URL.createObjectURL(new Blob([text], { type: "text/plain;charset=utf-8" }));
+  const a = el("a", { href: url, download: name });
+  document.body.append(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
+
+// ---------------------------------------------------------------------------------------------
+// Dialogs (not window.alert: that would stall the serial reading while it is open)
+function dialog(title, text, buttons) {
+  return new Promise(resolve => {
+    const m = el("div", { class: "modal" });
+    const close = v => { m.remove(); resolve(v); };
+    const row = el("div", { class: "btnrow" }, buttons.map(([label, v, cls]) => el("button", { class: cls, onclick: () => close(v) }, label)));
+    m.append(el("div", { class: "dlg", role: "dialog" }, el("h3", { text: title }), el("p", { text }), row));
+    m.addEventListener("keydown", e => { if (e.key === "Escape") close(buttons[buttons.length - 1][1]); });
+    document.body.append(m);
+    row.lastChild.focus();
+    if (buttons.length > 1) row.firstChild.focus();
+  });
+}
+const tell = (title, text) => dialog(title, text, [["OK", true, "primary"]]);
+const ask = (title, text, ok, cancel) => dialog(title, text, [[cancel, false, ""], [ok, true, "primary"]]).then(v => v === true);
+
+// ---------------------------------------------------------------------------------------------
+// Transport: Web Serial (USB cable) or the demo board
+const enc = new TextEncoder();
+let serialPort = null, serialReader = null, serialWriter = null, readDone = null, writeChain = Promise.resolve();
+let waitPort = null, waitTimer = null;  // a lost board we wait for (cable pulled, board reset)
+
+function serialSupported() { return "serial" in navigator; }
+
+async function connectClicked() {
+  if (B.connected || waitPort) { await disconnect(); return; }
+  if (DEMO) { openDemo(); return; }
+  if (!serialSupported()) { $("noSerial").classList.remove("hidden"); return; }
+  let port;
+  try { port = await navigator.serial.requestPort(); }
+  catch (e) { if (e.name !== "NotFoundError") append(`[app] no port chosen: ${e.message || e}`); return; }
+  await openSerial(port);
+}
+
+function portName(port) {
+  const i = port.getInfo ? port.getInfo() : {};
+  const hex = n => n.toString(16).padStart(4, "0");
+  return i.usbVendorId != null ? `USB ${hex(i.usbVendorId)}:${hex(i.usbProductId)}` : "port szeregowy";
+}
+
+async function openSerial(port, again = false) {
+  try {
+    // A big buffer: drawings and the memory export come as bursts of long lines.
+    await port.open({ baudRate: 115200, bufferSize: 65536 });
+  } catch (e) {
+    if (again) return false;  // still gone: keep waiting
+    append(`[app] could not open ${portName(port)}: ${e.message || e}`);
+    if (e.name === "InvalidStateError") append("[app] (the port is already open - another tab or app, e.g. the Arduino monitor?)");
+    return false;
+  }
+  if (again && waitPort !== port) { try { await port.close(); } catch {} return false; }  // stopped waiting meanwhile
+  stopWaiting();
+  serialPort = port;
+  serialWriter = port.writable.getWriter();
+  writeChain = Promise.resolve();
+  const gen = startConnection({
+    kind: "usb",
+    write(text, command) {
+      const w = serialWriter, data = enc.encode(text);
+      writeChain = writeChain.then(() => w.write(data)).catch(e => {
+        append(`[app] write failed (${command.startsWith("# p ") ? "# p …" : command}): ${e.message || e}`);
+      });
+    },
+  }, `connected to ${portName(port)}`);
+  readDone = readLoop(port, gen);
+  return true;
+}
+
+async function readLoop(port, gen) {
+  const decoder = new TextDecoder("utf-8");  // stream mode: a character split between two reads stays intact
+  let buf = "";
+  while (port.readable && gen === generation) {
+    const reader = port.readable.getReader();
+    serialReader = reader;
+    try {
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        let nl;
+        while ((nl = buf.indexOf("\n")) >= 0) {
+          const line = buf.slice(0, nl).trim();
+          buf = buf.slice(nl + 1);
+          if (line && gen === generation) {
+            try { handle(line); } catch (e) { console.error(e); }
+          }
+        }
+        if (buf.length > 65536) buf = "";  // no newline for ages: garbage
+      }
+    } catch (e) {
+      // Overrun / framing / break errors are not fatal (port.readable comes back); a pulled cable is.
+      if (gen === generation && port.readable) append(`[app] read error (${e.name}), continuing`);
+    } finally {
+      try { reader.releaseLock(); } catch {}
+    }
+  }
+  if (gen === generation && link && link.kind === "usb") lost(port);
+}
+
+async function closeSerial(port) {
+  const reader = serialReader, writer = serialWriter, done = readDone;
+  serialReader = serialWriter = readDone = null;
+  serialPort = null;
+  try { await reader?.cancel(); } catch {}
+  try { await done; } catch {}
+  try { await Promise.race([writeChain, new Promise(r => setTimeout(r, 500))]); } catch {}
+  try { writer?.releaseLock(); } catch {}
+  try { await port?.close(); } catch {}
+}
+
+function startConnection(l, what) {
+  generation++;
+  link = l;
+  pendingDrawings = [];
+  soulLines = null; soulOut = []; soulSent = 0;
+  setConnected(true);
+  append(`[app] ${what}`);
+  // Ask for the lists and the state (again a little later: opening the port may reset the board).
+  sendLater(0.4, "h");
+  sendLater(3.0, "h");
+  sendLater(3.6, "U", true);
+  sendLater(4.2, "o d", true);
+  sendLater(4.8, "@ app", true);  // settings incl. the brightness schedule
+  sendLater(5.4, "@ ota", true);  // version and updates
+  sendLater(6.0, "@ festive", true);  // holidays: country, birthdays, today
+  clearInterval(poll);
+  poll = setInterval(() => send("w", true), 1500);
+  return generation;
+}
+
+function teardown() {
+  generation++;
+  clearTimeout(otaPoll);
+  clearInterval(poll); poll = null;
+  const l = link;
+  link = null;
+  soulLines = null; soulOut = []; setImportProgress();
+  setConnected(false);
+  return l;
+}
+
+async function disconnect() {
+  const waiting = waitPort;
+  stopWaiting();
+  if (!B.connected) { if (waiting) append("[app] stopped waiting for the board"); setConnText(); return; }
+  const l = teardown();
+  if (l?.kind === "usb") await closeSerial(serialPort);
+  if (l?.kind === "demo") demo.stop();
+  append("[app] disconnected");
+}
+
+// The board went away (cable pulled, board reset): wait for it to come back and reconnect.
+async function lost(port) {
+  if (!B.connected) return;
+  const l = teardown();
+  append("[app] disconnected (cable pulled or the board restarted) – waiting for it to come back…");
+  if (l?.kind === "demo") { demo.stop(); waitPort = "demo"; setConnText(); waitTimer = setTimeout(() => openDemo(true), 2500); return; }
+  await closeSerial(port);
+  waitPort = port;
+  waitTries = 0;
+  setConnText();
+  scheduleRetry(1200);
+}
+let waitTries = 0, opening = false;
+function scheduleRetry(ms) { clearTimeout(waitTimer); waitTimer = setTimeout(retryOpen, ms); }
+async function retryOpen() {
+  const port = waitPort;
+  if (!port || port === "demo" || opening) return;
+  opening = true;
+  const ok = await openSerial(port, true);
+  opening = false;
+  if (ok || waitPort !== port) return;
+  if (++waitTries < 60) scheduleRetry(2000);  // a reset board is usually back in 1-3 s
+  else { stopWaiting(); append("[app] the board did not come back – connect again"); }
+}
+function stopWaiting() { clearTimeout(waitTimer); waitTimer = null; waitPort = null; setConnText(); }
+
+if (serialSupported()) {
+  navigator.serial.addEventListener("disconnect", e => { if (e.target === serialPort && B.connected) lost(serialPort); });
+  navigator.serial.addEventListener("connect", e => {
+    // The lost board is plugged in again (or came back after a reset): open it straight away.
+    if (!waitPort || waitPort === "demo" || B.connected) return;
+    const a = e.target.getInfo(), b = waitPort.getInfo();
+    if (e.target === waitPort || (a.usbVendorId != null && a.usbVendorId === b.usbVendorId && a.usbProductId === b.usbProductId)) {
+      waitPort = e.target;
+      scheduleRetry(700);
+    }
+  });
+}
+
+// ---------------------------------------------------------------------------------------------
+// UI: header and connection
+// The little eyes in the header: asleep while nothing is connected; on connecting they open and he
+// is glad (eyes smiling, two hops); while connected he blinks now and then.
+let blinkTimer = 0;
+function headerEyes(woke) {
+  const eyes = document.querySelector("header .eyes");
+  clearTimeout(blinkTimer);
+  if (!B.connected) { eyes.classList.remove("glad", "blink"); return; }
+  if (woke) { eyes.classList.add("glad"); setTimeout(() => eyes.classList.remove("glad"), 1500); }
+  const blink = () => {
+    eyes.classList.add("blink"); setTimeout(() => eyes.classList.remove("blink"), 130);
+    blinkTimer = setTimeout(blink, 2500 + Math.random() * 4500);
+  };
+  blinkTimer = setTimeout(blink, 2600 + Math.random() * 2000);
+}
+function setConnected(on) {
+  B.connected = on;
+  const woke = on && !document.body.classList.contains("online");
+  document.body.classList.toggle("online", on);
+  headerEyes(woke);
+  $("status").classList.toggle("hidden", !on);
+  for (const b of document.querySelectorAll("[data-needs]")) b.disabled = !on;
+  updateGalleryButtons();
+  setConnText();
+}
+function setConnText() {
+  const t = $("connText"), b = $("connect");
+  if (B.connected) { t.textContent = link?.kind === "demo" ? "Połączony z symulacją (bez płytki)" : "Połączony przez USB"; b.textContent = "Rozłącz"; b.classList.remove("primary"); }
+  else if (waitPort) { t.textContent = "Płytka zniknęła – czekam, aż wróci…"; b.textContent = "Przestań czekać"; b.classList.remove("primary"); }
+  else { t.textContent = "Niepołączony"; b.textContent = DEMO ? "Połącz (demo)" : "Połącz przez USB"; b.classList.add("primary"); }
+}
+function renderState() {
+  const s = B.state;
+  $("stMood").textContent = moodPL[s.mood] || s.mood || "–";
+  $("stDrive").textContent = drivePL[s.drive] || s.drive || "–";
+  $("stFace").textContent = emotionPL[s.face] || s.face || "–";
+  $("stDriver").textContent = s.driver || "–";
+  $("stFps").textContent = s.fps || "–";
+  const m = $("modeTitle"); if (m) m.textContent = `Dźwięk (teraz: ${({ normal: s.muted === "1" ? "wyciszony" : "włączony", quiet: "bez dźwięku" })[s.mode] || "–"})`;
+  const se = $("sensTitle"); if (se) se.textContent = `Wyczucie jazdy (czułość: ${s.sens ? Math.round(parseFloat(s.sens) * 100) + "%" : "–"})`;
+  const le = $("learnBtn"); if (le) le.lastChild.textContent = s.learning === "1" ? "Uczy się – kliknij, żeby zatrzymać" : "Nie uczy się – kliknij, żeby włączyć";
+  const te = $("tempBtn"); if (te) te.lastChild.textContent = s.sensor === "1" ? "Czujnik jest – czuje zimno i upał" : "Brak czujnika – kliknij, żeby poszukać";
+  const nv = $("navTitle"); if (nv) nv.textContent = `Ostrzeżenia drogowe (teraz: ${({ yanosik: "Yanosik", waze: "Waze", both: "Yanosik i Waze" })[s.nav] || "–"})`;
+}
+
+// ---------------------------------------------------------------------------------------------
+// UI building blocks
+function needs(btn) { btn.dataset.needs = "1"; btn.disabled = !B.connected; return btn; }
+function cmdButton(label, onclick, cls = "small") { return needs(el("button", { class: cls, onclick }, label)); }
+// A face preview: the GIF at first; once the live face (face/carbuddy-face.wasm) has loaded, his
+// real face code draws it at the screen's frame rate - only while the card is on screen.
+let faceLib = null;
+const faceSlots = [];
+function liveFace(slot) {
+  if (!faceLib || !faceLib.has(slot.id) || slot.live) return;
+  const canvas = el("canvas", { class: "screen" });
+  slot.img.replaceWith(canvas);
+  slot.live = faceLib.view(canvas, { clip: slot.id, loop: true, onlyVisible: true });
+}
+function faceImg(id) {
+  const img = el("img", { class: "screen", src: `faces/${id}.gif`, alt: "", loading: "lazy", decoding: "async" });
+  img.onerror = () => { img.style.visibility = "hidden"; };
+  const slot = { id, img, live: null };
+  faceSlots.push(slot);
+  liveFace(slot);
+  return el("div", { class: "bezel" }, img);
+}
+if (window.CarBuddyFace) {
+  CarBuddyFace.load("face/").then(f => {
+    faceLib = f;
+    faceSlots.forEach(liveFace);
+    startVirtual();
+  }).catch(() => {});  // e.g. opened from file://: the GIFs stay
+}
+// The demo's virtual CarBuddy: plays what the simulated board shows (its "[state] face=").
+let virtual = null, virtualFace = "";
+function startVirtual() {
+  if (!DEMO || !faceLib) return;
+  $("vscreen").classList.remove("hidden");
+  virtual = faceLib.view($("vcanvas"), { clip: "neutral", loop: true });
+}
+function showVirtual(name, resting) {
+  if (!virtual || !name || name === virtualFace) return;
+  virtualFace = name;
+  if (!faceLib.has(name)) return;
+  if (name === resting || !faceLib.has(resting)) virtual.play(name, { loop: true });
+  else virtual.play(name, { loop: false, then: resting, hold: 300 });
+}
+// Action: [title, command, face, what, when]
+function actionCard([title, command, face, what, when]) {
+  return el("div", { class: "acard" },
+    face ? faceImg(face) : null,
+    el("div", { class: "txt" },
+      el("b", { text: title, title }),
+      el("div", { text: what }),
+      when ? el("div", { class: "when" }, el("small", { text: "KIEDY" }), el("span", { text: when })) : null,
+      command ? cmdButton("▶ Wywołaj", () => send(command), "primary small go") : null));
+}
+function actionGroup(title, actions) {
+  return el("section", {}, el("h2", { text: title }), el("div", { class: "grid actions" }, actions.map(actionCard)));
+}
+const A = (title, command, face, what, when) => {
+  if (command && face) faceForCommand[command] = face;  // the demo shows this animation for it
+  return [title, command, face, what, when];
+};
+const faceForCommand = {};
+// Screen brightness by the time of day (firmware: display/Brightness.h, "@ bri ...").
+function brightnessSection() {
+  const sec = el("section", {}, el("h2", { text: "Jasność ekranu", id: "briTitle" }),
+    el("p", { class: "note", text: "„Według słońca” – w dzień pełna jasność, o zmierzchu powoli przygasa, w nocy świeci słabo; godziny zmierzchu liczy sam dla Twojej strefy czasowej, przez cały rok. „Własne godziny” – od której godziny jak jasno. „Stała” – zawsze tak samo." }),
+    el("div", { class: "btnrow" },
+      needs(el("button", { id: "briSun", onclick: () => send("@ bri sun") }, "Według słońca")),
+      needs(el("button", { id: "briAuto", onclick: () => send("@ bri auto") }, "Własne godziny")),
+      needs(el("button", { id: "briFixed", onclick: () => send(`@ bri fixed ${$("briLevel").value}`) }, "Stała")),
+      el("input", { type: "range", id: "briLevel", min: 0, max: 100, step: 5, value: 100,
+                    oninput: (e) => { $("briLevelV").textContent = e.target.value + "%"; },
+                    onchange: (e) => send(`@ bri fixed ${e.target.value}`) }),
+      el("span", { id: "briLevelV", text: "100%" })),
+    el("div", { class: "btnrow" }, el("span", { text: "Gdy śpi, świeci na" }),
+      el("input", { type: "number", id: "briSleep", min: 0, max: 100, step: 5, value: 60, style: "width:4.5em",
+                    onchange: (e) => send(`@ bri sleep ${Math.max(0, Math.min(100, +e.target.value || 0))}`) }),
+      el("span", { text: "% (100 = nie przygasa)" })),
+    el("div", { id: "briSlots", class: "slots" }));
+  return sec;
+}
+function renderBrightness() {
+  const b = B.bri || {};
+  const how = { sun: "według słońca", auto: "własne godziny", fixed: "stała" }[b.mode] || "–";
+  const t = $("briTitle"); if (t) t.textContent = `Jasność ekranu (${how}, teraz ${b.now || "–"}%)`;
+  const sun = $("briSun"), a = $("briAuto"), f = $("briFixed");
+  if (sun) sun.classList.toggle("on", b.mode === "sun");
+  if (a) a.classList.toggle("on", b.mode === "auto");
+  if (f) f.classList.toggle("on", b.mode === "fixed");
+  // The hours matter only in their own mode (and by the sun until the time zone is known).
+  $("briSlots")?.classList.toggle("hidden", !(b.mode === "auto" || (b.mode === "sun" && b.sun === "unknown")));
+  if (b.sleep && document.activeElement !== $("briSleep")) $("briSleep").value = b.sleep;
+  if (b.fixed && document.activeElement !== $("briLevel")) { $("briLevel").value = b.fixed; $("briLevelV").textContent = b.fixed + "%"; }
+  const box = $("briSlots"); if (!box || !b.slots) return;
+  if (box.contains(document.activeElement)) return;  // don't redraw under the owner's fingers
+  box.textContent = "";
+  b.slots.split(",").forEach((s, i) => {
+    const [hm, lvl] = s.split("/");
+    const time = el("input", { type: "time", value: hm });
+    const level = el("input", { type: "number", min: 0, max: 100, step: 5, value: lvl, style: "width:4.5em" });
+    box.append(el("div", { class: "slotrow" }, el("span", { text: "od" }), time, el("span", { text: "jasność" }), level, el("span", { text: "%" }),
+      needs(el("button", { onclick: () => send(`@ bri slot ${i} ${time.value} ${Math.max(0, Math.min(100, +level.value || 0))}`) }, "Zapisz"))));
+  });
+}
+
+// Firmware updates over the internet (firmware: connect/Updater.h, "@ ota ...").
+const otaStatePL = ["–", "łączy się z Wi-Fi…", "sprawdza, czy jest nowa wersja…", "pobiera nową wersję", "instaluje…",
+                    "masz najnowszą wersję", "zainstalowana – uruchamia się ponownie", "nie udało się"];
+const otaMsgPL = {
+  "can't join the Wi-Fi (name or password?)": "nie łączy się z Wi-Fi (zła nazwa albo hasło?)",
+  "no file for this board in the release": "w nowym wydaniu nie ma pliku dla tej płytki",
+  "the download broke off": "pobieranie się przerwało",
+  "the file is damaged (SHA-256 differs)": "plik jest uszkodzony (inna suma SHA-256)",
+  "the file doesn't fit": "plik się nie mieści",
+  "no memory for the update task": "za mało pamięci",
+  "bad manifest address": "zły adres wydania",
+  "manifest without a build number": "wydanie bez numeru wersji",
+};
+function updateSection() {
+  return el("section", {}, el("h2", { text: "Aktualizacja oprogramowania", id: "otaTitle" }),
+    el("p", { class: "note", text: "Wpisz Wi-Fi (domowe albo hotspot w telefonie), a CarBuddy sam pobierze nową wersję. Wszystko, co pamięta, zostaje. Gdyby nowa wersja nie działała, sam wróci do poprzedniej." }),
+    el("p", { id: "otaStatus", text: "Połącz się z CarBuddy, żeby zobaczyć wersję." }),
+    el("div", { class: "btnrow" },
+      el("input", { id: "otaSsid", placeholder: "Nazwa sieci Wi-Fi", maxlength: 32, style: "width:14em" }),
+      el("input", { id: "otaPass", type: "password", placeholder: "Hasło", maxlength: 64, style: "width:12em", autocomplete: "off" }),
+      needs(el("button", { onclick: saveOtaWifi }, "Zapisz Wi-Fi"))),
+    el("div", { class: "btnrow" },
+      needs(el("button", { class: "primary", onclick: () => send("@ ota check") }, "Sprawdź i zainstaluj")),
+      needs(el("button", { onclick: () => send("@ ota") }, "Odśwież"))),
+    el("p", { class: "note" }, "Bez Wi-Fi? Podłącz go kablem i otwórz ", el("a", { href: "../firmware/", target: "_blank", text: "instalator" }), " – wybierz „Aktualizacja”."));
+}
+function saveOtaWifi() {
+  const ssid = $("otaSsid").value.trim(), pass = $("otaPass").value;
+  if (!ssid) { toast("Wpisz nazwę sieci"); return; }
+  if (ssid.includes("|")) { toast("Nazwa sieci nie może zawierać znaku |"); return; }
+  send(`@ ota wifi ${ssid}|${pass}`, true);  // the password never goes to the log
+  append(`> @ ota wifi ${ssid}|${pass ? "••••" : ""}`);
+  $("otaPass").value = "";
+  toast("Zapisano Wi-Fi do aktualizacji");
+}
+function renderOta() {
+  const o = B.ota, st = parseInt(o.state) || 0;
+  const t = $("otaTitle"); if (t) t.textContent = `Aktualizacja oprogramowania (wersja ${o.version || "–"})`;
+  let line = `Na płytce: ${o.version || "–"} (kompilacja ${o.build || "–"}, płytka ${o.board || "–"}). Wi-Fi do aktualizacji: ${o.wifi && o.wifi !== "-" ? o.wifi : "nieustawione"}.`;
+  if (st) {
+    line += ` Teraz: ${otaStatePL[st] || "–"}`;
+    if (st === 3) line += ` ${o.new && o.new !== "-" ? o.new + " " : ""}(${o.progress || "0%"})`;
+    if (st === 7) line += ` – ${otaMsgPL[o.msg] || o.msg}`;
+    line += ".";
+  }
+  $("otaStatus").textContent = line;
+  if (o.wifi && o.wifi !== "-" && document.activeElement !== $("otaSsid") && !$("otaSsid").value) $("otaSsid").value = o.wifi;
+}
+
+// The printed accessory on his head (firmware: behavior/Accessory.h, "@ accessory <key|none>").
+const ACCESSORIES = [["angel", "Angel (Lilo i Stitch)"], ["antenka", "Antenka"], ["batman", "Batman"], ["cinnamoroll", "Cinnamoroll"], ["crash", "Crash Bandicoot"], ["cthulhu", "Cthulhu"], ["mikolaj", "Czapka Mikołaja"], ["czapkazdaszkiem", "Czapka z daszkiem"], ["czapkazesmiglem", "Czapka ze śmigłem"], ["dobby", "Dobby"], ["dynia", "Dynia"], ["eevee", "Eevee"], ["goku", "Goku"], ["hellokitty", "Hello Kitty"], ["astronauta", "Hełm astronauty"], ["darthvader", "Hełm Vadera"], ["jednorozec", "Jednorożec"], ["gandalf", "Kapelusz Gandalfa"], ["heisenberg", "Kapelusz Heisenberga"], ["senna", "Kask Ayrtona Senny"], ["ferrari", "Kask F1 Ferrari"], ["kaskrajdowy", "Kask rajdowy"], ["peakyblinders", "Kaszkiet (Peaky Blinders)"], ["kocieuszy", "Kocie uszy"], ["kokardka", "Kokardka"], ["korona", "Korona"], ["kuromi", "Kuromi"], ["wiedzmin", "Miecze Wiedźmina"], ["osmiornica", "Ośmiornica"], ["panda", "Panda"], ["pepe", "Pepe"], ["pszczolka", "Pszczółka"], ["pusheen", "Pusheen"], ["hellboy", "Rogi Hellboya"], ["luffy", "Słomkowy kapelusz (One Piece)"], ["sonic", "Sonic"], ["spyro", "Spyro"], ["szczerbatek", "Szczerbatek"], ["tiaraprzydzialu", "Tiara Przydziału"], ["toad", "Toad (Mario)"], ["totoro", "Totoro"], ["jacksparrow", "Trikorn Jacka Sparrowa"], ["grogu", "Uszy Grogu"], ["krolik", "Uszy królika"], ["mis", "Uszy misia"], ["pikachu", "Uszy Pikachu"], ["shrek", "Uszy Shreka"], ["stitch", "Uszy Stitcha"], ["marge", "Włosy Marge Simpson"], ["zabka", "Żabka"]];
+function accessorySection() {
+  const pick = el("select", { id: "accPick", onchange: (e) => send(`@ accessory ${e.target.value || "none"}`) },
+    el("option", { value: "", text: "nic – sama głowa" }), ACCESSORIES.map(([k, n]) => el("option", { value: k, text: n })));
+  return el("section", {}, el("h2", { text: "Co ma na głowie" }),
+    el("p", { class: "note", text: "Wybierz akcesorium, które mu założyłeś. Zauważy je – a z czasem może pokazać coś specjalnego. Póki je nosi, nie rysuje sobie świątecznych czapek." }),
+    el("div", { class: "btnrow" }, needs(pick)));
+}
+function renderAccessory() {
+  const p = $("accPick");
+  if (p && document.activeElement !== p) p.value = B.accessory === "none" ? "" : B.accessory;
+}
+
+// Holidays and birthdays (firmware: behavior/Calendar.h, "@ country", "@ birthday", "@ festive").
+const festivePL = {
+  "none": "zwykły dzień", "new-year": "Nowy Rok", "new-years-eve": "Sylwester", "valentine": "Walentynki", "fat-thursday": "Tłusty Czwartek",
+  "easter": "Wielkanoc", "easter-monday": "Śmigus-dyngus", "childrens-day": "Dzień Dziecka", "halloween": "Halloween", "mikolajki": "Mikołajki",
+  "christmas-eve": "Wigilia", "christmas": "Boże Narodzenie", "spring": "pierwszy dzień wiosny", "summer": "pierwszy dzień lata",
+  "autumn": "pierwszy dzień jesieni", "winter": "pierwszy dzień zimy", "national-day": "święto narodowe", "thanksgiving": "Święto Dziękczynienia",
+  "bonfire-night": "Bonfire Night", "birthday": "urodziny",
+};
+const MONTHS = ["styczeń", "luty", "marzec", "kwiecień", "maj", "czerwiec", "lipiec", "sierpień", "wrzesień", "październik", "listopad", "grudzień"];
+// Four drivers (firmware: Memory::kProfiles); there is no guest any more.
+const PEOPLE = 4, EVERYONE = [0, 1, 2, 3];
+const defaultNames = EVERYONE.map(p => `Kierowca ${p + 1}`);
+function festiveSection() {
+  const country = el("select", { id: "festCountry", onchange: (e) => { send(`@ country ${e.target.value}`); sendLater(0.3, "@ festive", true); } },
+    [["pl", "Polska"], ["us", "USA"], ["uk", "Wielka Brytania"], ["de", "Niemcy"], ["other", "Inny (tylko wspólne święta)"]]
+      .map(([v, t]) => el("option", { value: v, text: t })));
+  const rows = EVERYONE.map(p => {
+    const month = el("select", { id: `bdMonth${p}` }, el("option", { value: "0", text: "–" }), MONTHS.map((m, i) => el("option", { value: i + 1, text: m })));
+    const day = el("input", { id: `bdDay${p}`, type: "number", min: 1, max: 31, placeholder: "dzień", style: "width:5em" });
+    const save = () => {
+      const m = +month.value, d = clamp(+day.value || 0, 0, 31);
+      send(m && d ? `@ birthday ${p} ${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}` : `@ birthday ${p} 0`);
+      sendLater(0.3, "@ festive", true);
+    };
+    return el("div", { class: "slotrow" }, el("span", { id: `bdName${p}`, text: defaultNames[p], style: "min-width:9em" }), day, month,
+      needs(el("button", { onclick: save }, "Zapisz")));
+  });
+  return el("section", {}, el("h2", { text: "Święta i urodziny", id: "festTitle" }),
+    el("p", { class: "note", text: "W święta ma dla was niespodzianki. Kraj decyduje, które święta obchodzi." }),
+    el("div", { class: "btnrow" }, el("span", { text: "Kraj:" }), needs(country),
+      needs(el("button", { id: "festToday", onclick: () => send("@ festive today") }, "Pokaż dzisiejsze święto"))),
+    el("p", { class: "note", text: "Urodziny kierowców – tego dnia też coś szykuje. Żeby usunąć datę, wybierz „–” i zapisz." }),
+    el("div", { class: "slots" }, rows));
+}
+function renderFestive() {
+  const f = B.festive;
+  const t = $("festTitle"); if (!t) return;
+  t.textContent = `Święta i urodziny (dziś: ${festivePL[f.today] || "–"})`;
+  if (f.country && document.activeElement !== $("festCountry")) $("festCountry").value = f.country;
+  $("festToday").classList.toggle("hidden", !f.today || f.today === "none");
+  const b = (f.birthdays || "").split(",");
+  for (let p = 0; p < PEOPLE; p++) {
+    $(`bdName${p}`).textContent = B.relations[p]?.name || defaultNames[p];
+    const nm = $(`nmName${p}`); if (nm) nm.textContent = B.relations[p]?.name || defaultNames[p];
+    const v = parseInt(b[p], 10) || 0;
+    if (document.activeElement === $(`bdDay${p}`) || document.activeElement === $(`bdMonth${p}`)) continue;
+    $(`bdMonth${p}`).value = String(Math.floor(v / 100));
+    $(`bdDay${p}`).value = v ? v % 100 : "";
+  }
+}
+
+function pads(title, buttons, id, note) {
+  return el("section", {}, el("h2", { text: title, id }), note ? el("p", { class: "note", text: note }) : null,
+    el("div", { class: "grid pads" }, buttons.map(([ic, label, fn, bid]) =>
+      needs(el("button", { onclick: fn, id: bid }, el("span", { class: "ic", text: ic }), el("span", { text: label }))))));
+}
+function barRow(label, frac, value, cls = "") {
+  return el("div", { class: "barrow" }, el("span", { class: "lbl", text: label }),
+    el("span", { class: "bar " + cls }, el("i", { style: `width:${Math.max(0, Math.min(1, frac)) * 100}%` })),
+    el("span", { class: "num", text: value }));
+}
+
+// ---------------------------------------------------------------------------------------------
+// Tabs
+const TABS = [["gallery", "Galeria min"], ["drive", "Jazda"], ["touch", "Dotyk"], ["phone", "Telefon"], ["reactions", "Reakcje"], ["acts", "Zachowania"],
+              ["mood", "Nastrój"], ["hobby", "Hobby"], ["dreams", "Sny"], ["relations", "Relacje"], ["yanosik", "Yanosik"], ["settings", "Ustawienia"]];
+const panels = {};
+let tab = "gallery";
+try { const t = localStorage.getItem("carbuddy.panel.tab"); if (TABS.some(x => x[0] === t)) tab = t; } catch {}
+function showTab(t) {
+  tab = t;
+  for (const [k] of TABS) { panels[k].classList.toggle("hidden", k !== t); }
+  for (const b of $("tabs").children) b.classList.toggle("on", b.dataset.tab === t);
+  $("scroll").scrollTop = 0;
+  if (t === "hobby") renderDrawings();  // canvases need a size
+  try { localStorage.setItem("carbuddy.panel.tab", t); } catch {}
+}
+for (const [k, label] of TABS) {
+  $("tabs").append(el("button", { "data-tab": k, onclick: () => showTab(k) }, label));
+  panels[k] = el("div", { class: "panel hidden" });
+  $("scroll").append(panels[k]);
+}
+
+// --- Jazda
+panels.drive.append(
+  actionGroup("Zdarzenia na drodze", [
+    A("Ostre hamowanie", "b", "scared", "Za każdym razem trochę inaczej: strach, podskok, zdziwienie, wstrząs, złość albo „łiii!”, a potem wyrzut, „wszystko OK?”, ulga, pilnowanie drogi… (wszystkie warianty są w zakładce Reakcje).", "Mocne hamowanie."),
+    A("Mocne przyspieszenie", "a", "excited", "Zachwyt, trzymanie się, lekki strach, radość albo zdziwienie – zależnie od nastroju i charakteru.", "Ostre ruszanie lub przyspieszanie."),
+    A("Dziura / wybój", "k", "x-ouch", "„Auć!” z gwiazdkami i podskokiem buzi, potem wyrzut, otrząśnięcie, chichot albo nic (szczegóły w zakładce Reakcje).", "Prawdziwe uderzenie: dziura, próg, stuknięcie."),
+    A("Rondo (kręcenie)", "d", "dizzy", "Zawroty głowy: rozmazane oczy kiwają się razem i powoli uspokajają.", "Rondo albo dużo zakrętów pod rząd."),
+    A("Potrząśnięcie", "x", "dizzy", "Najpierw zawroty, potem złość z pomrukiem, na końcu obrażony odwraca wzrok.", "Ktoś nim potrząsa."),
+    A("Ruszenie z postoju", "j", "attentive", "Jak drugi pilot patrzy na drogę. Na początku trasy zerka na drogę, na ciebie i stanowczo mruga.", "Auto rusza po postoju."),
+  ]),
+  actionGroup("Gdy auto nim rzuca", [
+    A("Zakręt w lewo", "L", "strain", "Buzia leci w prawo i lekko się spłaszcza; w dłuższym zakręcie reaguje zależnie od nastroju.", "Zakręt w lewo."),
+    A("Zakręt w prawo", "R", "strain", "Buzia leci w lewo i lekko się spłaszcza.", "Zakręt w prawo."),
+    A("Hamowanie (do przodu)", "F", "strain", "Buzia leci w dół, do przodu.", "Hamowanie."),
+    A("Przyspieszanie (do tyłu)", "B", "strain", "Buzię wciska w górę, do tyłu.", "Przyspieszanie."),
+  ]),
+  actionGroup("Sen, powitanie, świętowanie", [
+    A("Uśpij", "s", "drowsy", "Walczy ze snem (ciężkie mrugnięcia, kiwanie), potem zasypia; każda drzemka wygląda trochę inaczej.", "Kilka minut postoju (parking albo długi korek)."),
+    A("Powitanie", "g", "hi", "Budzi się i wita na jeden z sześciu sposobów (opisane w zakładce Reakcje); im dłużej się nie widzieliście, tym większe powitanie.", "Po włączeniu zasilania."),
+    A("Gwiazdka", "C 1", "x-star", "Jest z ciebie dumny – złota gwiazdka.", "Na koniec co najmniej 20 minut spokojnej jazdy."),
+    A("Tort", "C 2", "x-cake", "Tort ze świeczką.", "Co setna wspólna trasa."),
+    A("Puchar", "C 3", "x-trophy", "Złoty puchar.", "Co dziesiąta spokojna trasa."),
+  ]));
+
+// --- Dotyk
+panels.touch.append(actionGroup("Dotyk ekranu", [
+  A("Stuknięcie", "1", "joy", "Zwykle radość ^ ^ albo ciekawość, a przez sen otwiera jedno oko („jeszcze 5 minut”).", "Jedno dotknięcie."),
+  A("Podwójne stuknięcie", "2", "curious", "Zaciekawienie i oczko.", "Dwa szybkie dotknięcia."),
+  A("Potrójne stuknięcie", "3", "sleepy", "Wycisza albo włącza dźwięk i krótką miną daje znać, że zrozumiał.", "Trzy szybkie dotknięcia."),
+  A("Głaskanie (początek / koniec)", "p", "petted", "Zamyka oczy z przyjemnością, czasem podgląda; gdy przestaniesz, jeszcze chwilę się rozkoszuje, a po długim głaskaniu jest zakochany.", "Przesuwasz palcem po ekranie."),
+]));
+
+// --- Telefon
+panels.phone.append(
+  actionGroup("Symulacja telefonu", [
+    A("Dzwoni / koniec rozmowy", "q", "attentive", "Zaskoczony patrzy na ciebie i czeka; po rozmowie jeszcze przez minutę jest cicho. Przez sen otwiera jedno oko.", "Połączenie przychodzące."),
+    A("Powiadomienie", "n", "curious", "Czasem się zaciekawi (treści nigdy nie pokazuje); najwyżej raz na ~45 s.", "Powiadomienie na iPhonie."),
+    A("Telefon się połączył", "V", "x-phone-star", "„O, to ty!” – wita się zależnie od tego, co was łączy, a obok oczu pojawia się gwiazdka.", "Twój iPhone łączy się z nim przez Bluetooth."),
+    A("Spotkanie kierowcy", "O", "shy", "Po kolei: zazdrość, nieśmiałość przy gościu, zwykłe przywitanie.", "Przychodzi kierowca, a wcześniej jeździł ktoś inny albo CarBuddy był ignorowany; albo przychodzi gość."),
+  ]),
+  actionGroup("Muzyka", [
+    A("Muzyka gra / cichnie", "M", "x-groove", "Zależnie od nastroju: tańczy, lekko się kiwa albo tylko słucha.", "Spotify zaczyna lub przestaje grać."),
+    A("Następny utwór", "N", "x-dance-pop", "Na nowo decyduje, czy tańczyć; gdy ciągle przeskakujesz utwory, najpierw się dziwi, potem przewraca oczami.", "Zmiana utworu."),
+    A("Taniec: kolejny styl", "G", "x-dance-rap", "Pokazuje po kolei tańce: rap, techno, pop, rock, chill.", "Gatunek rozpoznaje po wykonawcy."),
+  ]),
+  actionGroup("Prawdziwy telefon", [
+    A("Sparuj iPhone'a (2 min)", "K", null, "Przez 2 minuty można sparować iPhone'a obecnego kierowcy.", "Potem na iPhonie: Ustawienia > Bluetooth."),
+    A("Zapomnij telefony kierowcy", "J", null, "Usuwa sparowane telefony obecnego kierowcy.", ""),
+    A("Następny kierowca", "P", null, "Przełącza na następnego kierowcę (jest ich czterech; imiona ustawia właściciel).", ""),
+  ]));
+
+// --- Reakcje: for each event, when it happens, how he may react and every way it can go on (each
+// one playable on the board: "@ take f n"). Generated from tools/reactions/reactions.py.
+// <reactions>
+// GENERATED by tools/reactions/reactions.py - edit there, not here.
+const REACTIONS = [
+  ["Ostre hamowanie", "b", "scared", "Mocne hamowanie (od ~0,3 g). Słabsze czasem puszcza płazem – zależnie od nastroju; na mocne reaguje zawsze.", "Najpierw spina się ze strachu, podskakuje, tylko się dziwi, jest wstrząśnięty, trzyma się, od razu się złości albo – wesoły i odważny – „łiii!”. Zależy to od wrażliwości, nastroju, siły hamowania i tego, ile ostatnio było nerwów. Potem kończy na jeden z tych sposobów:", [["Spojrzenie z wyrzutem", "@ take 0 0", "reproach", "Patrzy na ciebie z wyrzutem, czasem przewraca oczami.", "Zły nastrój, kilka hamowań pod rząd."], ["„Wszystko OK?”", "@ take 0 1", "attentive", "Sprawdza, czy nic ci nie jest, potem uśmiech ulgi.", "Bliska więź z kierowcą."], ["Uff", "@ take 0 2", "relaxed", "Otrząsa się i odpręża.", "Po strachu albo wstrząśnięciu."], ["Oczy na drogę", "@ take 0 3", "attentive", "Przez chwilę pilnuje drogi, potem wraca do ciebie.", "Wrażliwy charakter."], ["Chichot", "@ take 0 4", "joy", "Uśmiecha się do ciebie; po „łiii!” mruga.", "Dobry nastrój, po frajdzie."], ["Otrząśnięcie", "@ take 0 5", "shake-off", "Otrząsa się z piskiem.", "Po wstrząśnięciu."], ["Nic", "@ take 0 6", "neutral", "Na tym koniec.", "Zawsze możliwe."]]],
+  ["Dziura, próg, stuknięcie", "k", "x-ouch", "Tylko prawdziwe uderzenie: dziura, próg zwalniający, stuknięcie (także gdy ktoś go obraca). Samo obracanie czy przechylanie nie wystarczy. Na mocne (od 0,7 g) reaguje zawsze i od razu, potem ma 3 s przerwy.", "Najpierw „Auć!” z gwiazdkami nad głową (płynnie, przez szybkie przymrużenie oczu). Po mocnym łupnięciu bywa wstrząśnięty, po lekkim tylko się dziwi, a w świetnym humorze z rzadka woła „łiii!”. Buzia podskakuje jak na sprężynie. Potem jedna z reakcji:", [["Groźne spojrzenie", "@ take 1 0", "annoyed", "„To twoja wina!” – z pomrukiem.", "Zły nastrój, dużo nerwów."], ["Otrząśnięcie", "@ take 1 1", "shake-off", "Otrząsa się.", "Po wstrząśnięciu częściej."], ["Chichot z siebie", "@ take 1 2", "embarrassed", "Zawstydzony śmieje się z siebie.", "Dobry nastrój, zabawowy."], ["Oszołomiony", "@ take 1 3", "dizzy", "Jeszcze chwilę kręci mu się w głowie, potem się otrząsa.", "Rzadko."], ["Nic", "@ take 1 4", "neutral", "Na tym koniec.", "Często."]]],
+  ["Powitanie po włączeniu", "g", "hi", "Po włączeniu zasilania. Im dłuższa rozłąka, tym większe powitanie: krótkie (restart w trasie), zwykłe, wielkie albo „tęskniłem” (czasem najpierw „a gdzie TY byłeś?”). Pamięta, jak witał się ostatnio, nawet po wyłączeniu.", "Oczy z kresek powoli się otwierają, a potem:", [["Rozgląda się", "@ take 2 0", "hi", "W lewo, w prawo, znajduje cię i mówi „Hi”.", "Najczęściej."], ["Przeciąganie", "@ take 2 1", "strain", "Przeciąga się, ziewa, otrząsa, „Hi”.", "Mało energii (rano)."], ["A kuku", "@ take 2 2", "x-one-eye", "Najpierw zerka jednym okiem, potem „o, to ty!”.", "Zabawowy."], ["Gdzie ja jestem?", "@ take 2 3", "confused", "Zdezorientowany rozgląda się, potem radośnie cię poznaje.", "Ciekawski, po długiej rozłące."], ["Wyskakuje", "@ take 2 4", "excited", "Od razu podekscytowany, z piskiem.", "Po dłuższej rozłące."], ["Na luzie", "@ take 2 5", "x-wink", "Spokojne spojrzenie i mrugnięcie.", "Pewny siebie."]]],
+  ["Przywitanie kierowcy", "V", "x-phone-star", "Gdy przychodzi kierowca (jego telefon łączy się z CarBuddy). Zazdrość, nieśmiałość przy gościu i romantyczne powitania opisuje zakładka Relacje.", "Zwykłe przywitanie – im bliższa więź, tym większe:", [["Zachwyt", "@ take 3 0", "excited", "Podskakuje z radości, z piskiem.", "Ulubiony, bardzo bliska więź."], ["Szeroki uśmiech", "@ take 3 1", "joy", "Uśmiech ^ ^.", "Bliska więź."], ["„Hi!”", "@ take 3 2", "hi", "Mówi „Hi”.", "Bliska więź."], ["Mrugnięcie", "@ take 3 3", "x-wink", "Uśmiech i oczko.", "Zabawowy, bliska więź."], ["Skinienie", "@ take 3 4", "attentive", "Mrugnięcie jak skinienie głową i uśmiech.", "Zawsze możliwe."], ["Ciekawe spojrzenie", "@ take 3 5", "curious", "Przygląda się z ciekawością.", "Nowa osoba, słaba więź."]]],
+  ["Po zakręcie", "L", "gforce-left", "Po zakręcie, który naprawdę nim rzucił – mniej więcej co drugi raz. W tym samym nastroju sam zakręt przeżywa zawsze tak samo (frajda, napięcie lub strach albo złość); w trakcie buzia leci na zewnątrz zakrętu.", "Różni się tylko zakończenie:", [["Zadowolony", "@ take 4 0", "happy", "Uśmiech.", "Po frajdzie."], ["Jeszcze!", "@ take 4 1", "excited", "Patrzy na ciebie podekscytowany, z piskiem.", "Po frajdzie, dobry nastrój."], ["Mrugnięcie", "@ take 4 2", "x-wink", "Uśmiech i oczko.", "Po frajdzie, zabawowy."], ["Otrząśnięcie", "@ take 4 3", "shake-off", "Otrząsa się.", "Po strachu."], ["Uff", "@ take 4 4", "relaxed", "Odpręża się i patrzy przed siebie.", "Po strachu."], ["Spojrzenie na kierowcę", "@ take 4 5", "reproach", "Krótkie spojrzenie z wyrzutem.", "Po strachu, w stresie."], ["Trzyma się dłużej", "@ take 4 6", "strain", "Jeszcze chwilę się trzyma, potem otrząsa.", "Po napięciu."], ["Przewraca oczami", "@ take 4 7", "eyeroll", "Przewraca oczami.", "Po złości."], ["Westchnienie", "@ take 4 8", "bored", "Znudzone westchnienie.", "Po złości."], ["Nic", "@ take 4 9", "neutral", "Na tym koniec.", "Zawsze możliwe."]]],
+  ["Po krótkim głaskaniu", "p", "petted", "Gdy przestajesz głaskać. Po długim głaskaniu: zakochany, zawstydzony albo szczęśliwy.", "Najpierw rozkoszuje się z zamkniętymi oczami, a gdy je otworzy:", [["Jeszcze?", "@ take 5 0", "shy", "Patrzy na ciebie, potem nieśmiało ucieka wzrokiem.", "Przywiązany."], ["Westchnienie", "@ take 5 1", "relaxed", "Zadowolone westchnienie.", "Zawsze możliwe."], ["Uśmiech", "@ take 5 2", "joy", "Mały uśmiech do ciebie.", "Towarzyski."], ["To wszystko?", "@ take 5 3", "confused", "Patrzy pytająco.", "Zabawowy."], ["Nic", "@ take 5 4", "neutral", "Na tym koniec.", "Często."]]],
+  ["Dzwoni telefon", "q", "attentive", "Połączenie przychodzące. Przez całą rozmowę i minutę po niej jest cicho; przez sen otwiera jedno oko.", "Bez dźwięku, na jeden z tych sposobów:", [["Zaskoczony", "@ take 6 0", "surprised", "Zaskoczony patrzy na ciebie.", "Najczęściej."], ["Patrzy na telefon", "@ take 6 1", "curious", "Zerka w stronę telefonu.", "Ciekawski."], ["Ucieszony", "@ take 6 2", "excited", "Ucieszony patrzy na ciebie.", "Towarzyski, dobry nastrój."], ["Kto znowu?", "@ take 6 3", "annoyed", "Lekko zirytowany.", "Zmęczony."], ["Uważny", "@ take 6 4", "attentive", "Uważnie patrzy na ciebie.", "Zawsze możliwe."]]],
+  ["Po rozmowie", "q", "relaxed", "Koniec połączenia (jeszcze przez minutę jest cicho, na wypadek gdyby rozmowa trwała dalej).", "Bez dźwięku, na jeden z tych sposobów:", [["Spokój", "@ take 7 0", "relaxed", "Spokojna mina.", "Najczęściej."], ["Kto to był?", "@ take 7 1", "thinking", "Zastanawia się, patrząc na ciebie.", "Ciekawski."], ["Zadowolony", "@ take 7 2", "joy", "Uśmiech do ciebie.", "Dobry nastrój."], ["Nic", "@ take 7 3", "neutral", "Na tym koniec.", "Zawsze możliwe."]]],
+  ["Powiadomienie", "n messages", "x-notif-messages", "Wiadomość z komunikatora (iMessage, Messenger, WhatsApp, inne). Nigdy nie pokazuje treści; nie częściej niż co 45 s; nie w czasie rozmowy ani snu.", "„Bing!” – podskok, odchyla się w lewo i odwraca głowę w stronę ikonki aplikacji. Potem jedna z reakcji:", [["Wiadomość dla ciebie!", "@ take 8 0", "happy", "Radośnie patrzy na ciebie.", "Towarzyski."], ["Czyta dwa razy", "@ take 8 1", "x-notif-messages", "Patrzy na ciebie, jeszcze raz na ikonkę, potem na drogę.", "Zawsze możliwe."], ["Kto to może być?", "@ take 8 2", "thinking", "Zastanawia się.", "Ciekawski."], ["Ooo!", "@ take 8 3", "excited", "Podekscytowany.", "Komunikator, dobry nastrój."], ["Znowu?", "@ take 8 4", "eyeroll", "Przewraca oczami.", "4 powiadomienia w ciągu 10 minut."], ["Wraca do drogi", "@ take 8 5", "attentive", "Wraca wzrokiem na drogę.", "Zawsze możliwe."]]],
+  ["Cisza po muzyce", "M", "x-groove", "Gdy muzyka grała ponad 10 minut i nagle cichnie – mniej więcej co drugi raz.", "Reaguje na jeden z tych sposobów:", [["Rozgląda się", "@ take 9 0", "confused", "Zdziwiony rozgląda się za muzyką.", "Najczęściej."], ["Tęskni", "@ take 9 1", "dreamy", "Rozmarzony odwraca wzrok – trochę mu jej brak.", "Dobry nastrój."], ["Wreszcie spokój", "@ take 9 2", "relaxed", "Zadowolony z ciszy.", "Zły nastrój."], ["Pytające spojrzenie", "@ take 9 3", "confused", "Patrzy na ciebie pytająco.", "Towarzyski."]]],
+];
+// </reactions>
+panels.reactions.append(el("p", { class: "note", text: "Na każde zdarzenie może zareagować na kilka sposobów. O wyborze decydują nastrój, charakter, to, ile ostatnio było nerwów, i więź z kierowcą. Dwie ostatnio użyte reakcje wypadają dużo rzadziej, więc rzadko robi dwa razy to samo. „Wywołaj” losuje tak jak w aucie, a kafelki pokazują konkretne warianty." }));
+for (const [title, cmd, face, when, first, variants] of REACTIONS) {
+  panels.reactions.append(el("section", {},
+    el("h2", { text: title }),
+    el("p", { class: "note", text: when }),
+    el("div", { class: "grid actions" }, [actionCard(A("Wywołaj (losowo)", cmd, face, "Tak jak w aucie: wybiera sam.", ""))]),
+    el("p", { class: "note", text: first }),
+    el("div", { class: "grid actions" }, variants.map(actionCard))));
+}
+
+// --- Galeria min
+let catalog = null, faceNumbers = {};
+// What "show on CarBuddy" sends for previews that are not a plain face (as in the Mac app).
+function commandFor(id) {
+  const i = B.emotions.indexOf(id);
+  if (i >= 0) return `E ${i}`;
+  switch (id) {
+    case "x-star": return "C 1";
+    case "x-cake": return "C 2";
+    case "x-trophy": return "C 3";
+    case "x-hide": { const a = B.acts.indexOf("hide and seek"); return a >= 0 ? `D ${a}` : null; }
+    case "x-dance-rap": return "G 1";
+    case "x-dance-techno": return "G 2";
+    case "x-dance-pop": return "G 3";
+    case "x-dance-rock": return "G 4";
+    case "x-dance-chill": return "G 5";
+    case "x-phone-star": return "V";
+    case "y-radar": return "y 0 600";
+    case "y-police": return "y 1 500";
+    case "y-accident": return "y 2 200";
+    case "y-roadworks": return "y 3 900";
+    case "y-jam": return "y 4 100";
+    case "y-danger": return "y 5 500";
+    case "y-unmarked": return "y 6 600";
+    case "y-stopped": return "y 7 300";
+    default: return id.startsWith("f-") ? `@ festive ${id.slice(2)}` : null;
+  }
+}
+const galleryButtons = [];
+function buildGallery() {
+  if (!catalog) {
+    panels.gallery.append(el("p", { class: "note", text: "Nie ma jeszcze podglądów min – zbuduj je skryptem tools/CarBuddyPanel/build.sh." }));
+    return;
+  }
+  catalog.groups.flatMap(g => g.ids).forEach((id, i) => { if (!(id in faceNumbers)) faceNumbers[id] = i + 1; });
+  for (const g of catalog.groups) {
+    const grid = el("div", { class: "grid gallery" });
+    for (const id of g.ids) {
+      const info = catalog.faces[id];
+      if (!info) continue;
+      const btn = el("button", { class: "primary small go hidden", onclick: () => { const c = commandFor(id); if (c) send(c); } }, "▶ Pokaż na CarBuddy");
+      btn.dataset.face = id;
+      galleryButtons.push(btn);
+      grid.append(el("div", { class: "fcard" },
+        faceImg(id),
+        el("div", { class: "head" }, el("span", { class: "badge", text: faceNumbers[id] || 0 }), el("b", { text: info.name })),
+        el("div", { class: "id", text: id }),
+        el("div", { text: info.meaning }),
+        el("div", { class: "when" }, el("small", { text: "KIEDY" }), el("span", { text: info.when })),
+        btn));
+    }
+    panels.gallery.append(el("section", {}, el("h2", {}, g.title, el("span", { class: "count", text: g.ids.length })), grid));
+  }
+}
+function updateGalleryButtons() {
+  for (const b of galleryButtons) b.classList.toggle("hidden", !(B.connected && commandFor(b.dataset.face)));
+}
+
+// --- Zachowania / Nastrój (lists from the board, "h")
+function renderActs() {
+  panels.acts.replaceChildren(B.acts.length
+    ? actionGroup("Co robi sam z siebie", B.acts.map((name, i) => { const f = actInfo[name] || [name, "curious", "", ""]; return A(f[0], `D ${i}`, f[1], f[2], f[3]); }))
+    : el("section", {}, el("h2", { text: "Co robi sam z siebie" }), el("p", { class: "note", text: "Połącz się z CarBuddy – listę wysyła płytka (komenda h)." })));
+}
+function renderMoods() {
+  panels.mood.replaceChildren(B.moods.length
+    ? actionGroup("Nastroje na dłużej", B.moods.map((name, i) => { const f = moodInfo[name] || [name, "neutral", "", ""]; return A(f[0], `S ${i}`, f[1], f[2], f[3]); }))
+    : el("section", {}, el("h2", { text: "Nastroje na dłużej" }), el("p", { class: "note", text: "Połącz się z CarBuddy – listę wysyła płytka (komenda h)." })));
+}
+
+// --- Hobby
+const HOBBIES = [["butterfly", "🦋 Motyle"], ["stars", "⭐️ Gwiazdy"], ["bubbles", "🫧 Bańki"], ["ladybug", "🐞 Biedronka"], ["drawing", "✏️ Rysowanie"], ["magic", "🪄 Magia"], ["garden", "🌱 Ogród"]];
+const hobbyBox = el("div", { class: "bars" });
+const hobbyFlags = el("div");
+const drawingsNote = el("p", { class: "note" });
+const drawingsGrid = el("div", { class: "grid drawings" });
+const gardenBox = el("div");
+panels.hobby.append(
+  el("section", {}, el("h2", { text: "Jego zainteresowania" }),
+    el("p", { class: "note", text: "Zainteresowania rosną i słabną powoli (przez dni i tygodnie) i nie znikają po restarcie. Bawi się sam – na postoju i w trakcie jazdy; każde ważne zdarzenie na drodze przerywa zabawę. Z każdą zabawą nabiera wprawy: nowicjusz → wprawny (ok. 10 zabaw) → mistrz (ok. 25). Im lepszy, tym częściej mu wychodzi i tym ładniej to wygląda; nowy poziom świętuje małą uroczystością. Po wpadce w ulubionym hobby potrafi się uprzeć i ćwiczyć je przez kilka tras – dlatego jeden CarBuddy zostanie mistrzem magii, a inny rysowania." }),
+    hobbyBox, hobbyFlags, el("div", { class: "btnrow" }, cmdButton("Odśwież", () => send("w", true)))),
+  el("section", {}, el("h2", { style: "display:flex;align-items:center" }, "✏️ Jego rysunki", el("span", { style: "flex:1" }), cmdButton("Pobierz (o d)", () => send("o d", true))),
+    drawingsNote, drawingsGrid),
+  el("section", {}, el("h2", { text: "🌱 Jego roślina" }), gardenBox,
+    el("p", { class: "note", style: "margin-top:8px", text: "Roślina rośnie naprawdę, ale tylko podlewana (woda wysycha po ok. 2 dniach, u kaktusa po ok. 7). Z regularnym podlewaniem kwitnie po ok. 3–4 tygodniach, a po ok. 10 dniach przekwita i CarBuddy sadzi nowe nasionko." }),
+    el("div", { class: "btnrow" },
+      cmdButton("Przewiń o 1 dzień", () => { send("z 1"); send("w", true); }),
+      cmdButton("o 3 dni", () => { send("z 3"); send("w", true); }),
+      cmdButton("o tydzień", () => { send("z 7"); send("w", true); }),
+      cmdButton("Zajmij się nią teraz", () => send("o 6"), "primary small"))),
+  actionGroup("🌱 Ogród – scenki", [
+    A("Sadzenie", "", "h-garden-plant", "Pusta doniczka: wrzuca nasionko, podlewa i jest zadowolony.", "Kiedy doniczka jest pusta (na początku i po przekwitnięciu)."),
+    A("Podlewanie", "o 6 0", "h-garden-0", "Przygląda się roślince, podlewa ją z konewki i się cieszy.", "Na postoju; częściej, gdy ziemia jest sucha."),
+    A("Zwiędła", "", "h-garden-wilted", "Zapomniana roślinka zwiędła – smutek; po podlaniu się podnosi, a on się cieszy.", "Po ok. 3 dniach bez wody."),
+    A("Ale urosła!", "o 6 1", "h-garden-1", "Kilka dni nie zaglądał, a roślina w tym czasie urosła – zaskoczenie i radość.", "Kiedy roślina urosła od ostatniego razu."),
+    A("Pierwszy kwiat", "o 6 2", "h-garden-2", "Pąk się otwiera – zachwyt, duma, serduszka.", "Kiedy roślina pierwszy raz zakwitnie."),
+    A("🌵 Kaktus", "", "h-garden-cactus-0", "Co trzecie nasionko to kaktus: gruby pęd, ramiona, kolce. Pije mało i więdnie dopiero po ok. 8 dniach bez wody.", "Losowo przy sadzeniu."),
+    A("🌵 Kaktus zakwitł", "", "h-garden-cactus-2", "Różowy kwiat na czubku – duma i serduszka.", "Kaktus w pełni wzrostu."),
+  ]),
+  actionGroup("🦋 Motyle", [
+    A("Siada na oku", "o 0 0", "h-butterfly-0", "Śledzi motyla wzrokiem; motyl siada mu na oku, CarBuddy zamiera, żeby go nie spłoszyć. Po odlocie lekki smutek.", "Na postoju, częściej w dzień."),
+    A("Próba złapania", "o 0 1", "h-butterfly-1", "Próbuje złapać motyla oczami – pudło; zdezorientowany, potem się śmieje.", "Na postoju, częściej w dzień."),
+    A("Łaskotki – apsik!", "o 0 2", "h-butterfly-2", "Motyl siada na oku i łaskocze – kichnięcie go zdmuchuje, potem radość.", "Na postoju, częściej w dzień."),
+  ]),
+  actionGroup("⭐️ Gwiazdy", [
+    A("Spadająca gwiazda", "o 1 0", "h-stars-0", "Patrzy w gwiazdy; przelatuje spadająca – wielkie oczy, potem radość albo serduszko.", "Na postoju, częściej wieczorem i w nocy."),
+    A("Liczenie gwiazd", "o 1 1", "h-stars-1", "Liczy gwiazdy wzrokiem, jedna gaśnie – zdziwienie, potem błogi uśmiech.", "Na postoju, częściej wieczorem i w nocy."),
+    A("Gwiazdka w głowę", "o 1 2", "h-stars-2", "Gwiazdka spada mu na głowę – „au!”, odbija się, a on się śmieje.", "Na postoju, częściej wieczorem i w nocy."),
+  ]),
+  actionGroup("🫧 Bańki", [
+    A("Pęka w powietrzu", "o 2 0", "h-bubbles-0", "Ostrożnie dmucha bańkę, patrzy, jak leci; pęka – podskakuje z zaskoczenia, potem radość.", "Na postoju."),
+    A("Pęka na oku", "o 2 1", "h-bubbles-1", "Bańka dolatuje mu do oka i tam pęka – podskok, zdziwienie, śmiech.", "Na postoju."),
+    A("Odlatuje", "o 2 2", "h-bubbles-2", "Wielka bańka odpływa w górę i znika za ekranem; on ją żegna z uśmiechem.", "Na postoju."),
+  ]),
+  actionGroup("🐞 Biedronka", [
+    A("Strząsa ją", "o 3 0", "h-ladybug-0", "Biedronka idzie krawędzią ekranu i wchodzi mu na oko; delikatnie ją strząsa, odlatuje.", "Na postoju, częściej w dzień."),
+    A("Spacer krawędzią", "o 3 1", "h-ladybug-1", "Biedronka przechodzi przez cały ekran po krawędzi; odprowadza ją wzrokiem.", "Na postoju, częściej w dzień."),
+    A("Łaskocze", "o 3 2", "h-ladybug-2", "Biedronka wchodzi na oko i łaskocze – chichocze, potem maślane oczy.", "Na postoju, częściej w dzień."),
+  ]),
+  actionGroup("✏️ Rysowanie", [
+    A("Krzywe serce", "o 4 0", "h-drawing-0", "Rysuje serce; wychodzi krzywe, ale jest z siebie dumny.", "Na postoju."),
+    A("Gwiazdka się nie domyka", "o 4 1", "h-drawing-1", "Rysuje gwiazdkę, ostatnia kreska nie trafia – zdziwiony, potem się śmieje.", "Na postoju."),
+    A("Autoportret", "o 4 2", "h-drawing-2", "Rysuje swoją buźkę i zakochuje się w niej.", "Na postoju."),
+  ]),
+  actionGroup("🪄 Magia", [
+    A("Znika i wraca gdzie indziej", "o 5 0", "h-magic-0", "Czaruje: gwiazdka znika; przy drugiej próbie pojawia się w innym miejscu – zdezorientowany.", "Na postoju."),
+    A("Wraca jako serce", "o 5 1", "h-magic-1", "Gwiazdka znika i wraca jako serduszko – zakochany.", "Na postoju."),
+    A("Czar nie wychodzi", "o 5 2", "h-magic-2", "Czar dwa razy się nie udaje – irytacja, westchnienie, śmiech.", "Na postoju."),
+  ]),
+  actionGroup("📈 Jak rośnie mu wprawa", [
+    A("Serce nowicjusza", "", "h-drawing-0-novice", "Pierwsze próby: kreska się trzęsie, serce ledwo przypomina serce – ale jest dumny.", "Do ok. 10 zabaw."),
+    A("Serce mistrza", "", "h-drawing-0-master", "Gładkie, równe serce.", "Po ok. 25 zabawach."),
+    A("Gwiazdka nowicjusza", "", "h-drawing-1-novice", "Krzywe linie, koniec daleko od początku. Nowicjuszowi zdarza się najczęściej.", "Do ok. 10 zabaw."),
+    A("Autoportret mistrza", "", "h-drawing-2-master", "Równe kółko, oczy, uśmiech. Mistrz rysuje go dużo częściej.", "Po ok. 25 zabawach."),
+    A("Magia: na drugim oku", "", "h-magic-0-practised", "Gwiazdka znika i ląduje na jego drugim oku – zaskoczenie, śmiech.", "Wprawny (ok. 10 zabaw)."),
+    A("Magia: czysta sztuczka", "", "h-magic-0-master", "Wraca dokładnie tam, gdzie była, z błyskiem – „ta-da!”, duma. Czar prawie nigdy nie zawodzi.", "Mistrz (ok. 25 zabaw)."),
+    A("🌟 Awans", "", "h-levelup", "Niedowierzanie, złota gwiazdka, sięga po nią wzrokiem, ona krąży wokół oczu i znika – najdumniejsza mina, prosto do ciebie.", "Nowy poziom w hobby (po ok. 10 i 25 zabawach)."),
+    A("Wpadka – śmieje się", "", "h-flop-laughs", "Nie wyszło, ale się z tego śmieje.", "Wpadka w dobrym humorze."),
+    A("Wpadka – obraża się", "", "h-flop-sulks", "Gromi wzrokiem gwiazdkę i odwraca się od niej.", "Wpadka, gdy jest marudny."),
+    A("Wpadka mistrza", "", "h-flop-caught", "Zerka, czy widziałeś, i się rumieni. Mistrzom też się zdarza.", "Wpadka na poziomie mistrza."),
+    A("Obrażony na rysunek", "", "h-flop-drawing-sulks", "Gwiazdka się nie domknęła – foch na rysunek.", "Wpadka w rysowaniu, gdy jest marudny."),
+  ]));
+
+function renderHobbies() {
+  const h = B.hobbies;
+  hobbyBox.replaceChildren(...HOBBIES.map(([key, title]) => {
+    const parts = (h[key] || "").split("/");
+    const interest = parseFloat(parts[0]) || 0;
+    const row = barRow(title, interest / 100, `${Math.round(interest)} / 100`);
+    row.append(el("span", { style: "color:var(--dim)", text: `zabaw: ${parts.length > 1 ? parts[1] : "–"}` }));
+    if (key !== "garden") {
+      const level = Math.min(Math.max(parts.length > 2 ? parseInt(parts[2]) || 0 : 0, 0), 2);
+      row.append(el("span", { class: "chip lv" + level, text: ["nowicjusz", "wprawny", "mistrz ⭐️"][level] }));
+    }
+    return row;
+  }));
+  hobbyFlags.replaceChildren(
+    h.focus && h.focus !== "-" ? el("div", { class: "flag orange", text: `🔥 Uparł się, żeby opanować: ${h.focus} – ćwiczy przy każdej okazji przez kilka tras` }) : "",
+    h.playing && h.playing !== "-" ? el("div", { class: "flag", text: `✨ Teraz się bawi: ${h.playing}` }) : "");
+}
+
+// One of his drawings, as sent by the board: the pen path he really drew.
+function parseDrawing(line) {
+  const d = {};
+  for (const part of line.slice(10).split(" ")) { const i = part.indexOf("="); if (i > 0) d[part.slice(0, i)] = part.slice(i + 1); }
+  const total = parseInt(d.total), outcome = parseInt(d.outcome);
+  if (isNaN(total) || isNaN(outcome) || d.pts == null) return null;
+  return {
+    id: total, minute: parseInt(d.minute) || 0, outcome, level: parseInt(d.level) || 0, temper: parseInt(d.temper) || 0,
+    points: d.pts.split(";").map(p => p.split(",")).filter(v => v.length === 3 && v[0] !== "" && v[1] !== "" && !isNaN(+v[0]) && !isNaN(+v[1]))
+      .map(v => ({ x: +v[0], y: +v[1], down: v[2] === "1" })),
+  };
+}
+const clamp = (v, lo, hi) => Math.min(Math.max(v, lo), hi);
+function drawingTitle(d) { return ["Serce", "Gwiazdka (nie domknęła się)", "Autoportret"][clamp(d.outcome, 0, 2)]; }
+function drawingLevel(d) { return ["nowicjusz", "wprawny", "mistrz"][clamp(d.level, 0, 2)]; }
+// How he took it (Hobby.h): proud of a heart, smitten with himself; a failed star by mood.
+function drawingReaction(d) {
+  if (d.outcome === 0) return "dumny 😊";
+  if (d.outcome === 2) return "zakochany w sobie 😍";
+  return ["zdziwiony, potem śmiech 😅", "śmiał się 😆", "obraził się na nią 😤", "sprawdzał, czy widziałeś 🙈"][clamp(d.temper, 0, 3)];
+}
+const drawFmt = new Intl.DateTimeFormat("pl-PL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit", timeZone: "UTC" });
+function drawingWhen(d) {
+  if (d.minute <= 0) return "bez daty (zegar nie był ustawiony)";
+  return drawFmt.format(new Date(d.minute * 60000));  // the board keeps local time: shown as is
+}
+function paint(canvas, d) {
+  const w = canvas.clientWidth, h = canvas.clientHeight;
+  if (!w || !h) return;
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width = Math.round(w * dpr); canvas.height = Math.round(h * dpr);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  // His drawing area is about 100 x 90 px around (120, 232) on his screen.
+  const k = Math.min(w / 110, h / 95);
+  ctx.beginPath();
+  let prev = false;
+  for (const p of d.points) {
+    const x = w / 2 + (p.x - 120) * k, y = h / 2 + (p.y - 232) * k;
+    if (p.down && prev) ctx.lineTo(x, y); else ctx.moveTo(x, y);
+    prev = p.down;
+  }
+  ctx.strokeStyle = "rgb(255,235,199)";
+  ctx.lineWidth = 3.2 * k; ctx.lineCap = "round"; ctx.lineJoin = "round";
+  ctx.stroke();
+}
+const paperObserver = new ResizeObserver(entries => { for (const e of entries) if (e.target._drawing) paint(e.target, e.target._drawing); });
+function renderDrawings() {
+  const t = B.drawings.total, list = B.drawings.list;
+  drawingsNote.textContent = t > 0
+    ? `Narysował już ${t} – tu ostatnie ${list.length}, najnowsze pierwsze. Widać, jak z czasem pewnieje mu ręka.`
+    : "Jeszcze nic nie narysował. Rysuje sam na postoju (albo niżej: „✏️ Rysowanie” → „Wywołaj”).";
+  for (const c of drawingsGrid.querySelectorAll("canvas")) paperObserver.unobserve(c);
+  drawingsGrid.replaceChildren(...list.map(d => {
+    const canvas = el("canvas");
+    canvas._drawing = d;
+    paperObserver.observe(canvas);
+    return el("div", { class: "dcard" },
+      el("div", { class: "paper" }, canvas, el("span", { text: "#" + d.id })),
+      el("b", { text: drawingTitle(d) }),
+      el("small", { text: `${drawingLevel(d)} · ${drawingReaction(d)}` }),
+      el("em", { text: drawingWhen(d) }));
+  }));
+}
+
+function renderGarden() {
+  const stages = ["pusta doniczka", "nasionko", "kiełek", "dwa listki", "krzaczek", "pąk", "kwitnie 🌸"];
+  const g = B.garden;
+  const stage = parseInt(g.stage) || 0, growth = parseFloat(g.growth) || 0, water = parseFloat(g.water) || 0;
+  gardenBox.replaceChildren(
+    el("div", { style: "display:flex;gap:18px;align-items:baseline;margin-bottom:8px" },
+      el("b", { text: `${g.cactus === "1" ? "🌵 Kaktus" : "🌷 Kwiatek"} – etap: ${stages[clamp(stage, 0, stages.length - 1)]}` }),
+      g.wilted === "1" ? el("span", { style: "color:var(--orange)", text: "💧 zwiędła – czeka na wodę" }) : "",
+      el("span", { style: "color:var(--dim)", text: `kwiatów: ${g.blooms || "–"}` })),
+    el("div", { class: "barrow" },
+      el("span", { style: "width:70px", text: "Wzrost" }), el("span", { class: "bar" }, el("i", { style: `width:${clamp(growth, 0, 1) * 100}%` })),
+      el("span", { style: "width:50px;text-align:right", text: "Woda" }), el("span", { class: "bar blue", style: "width:160px" }, el("i", { style: `width:${clamp(water, 0, 1) * 100}%` }))));
+}
+
+// --- Sny
+const DREAMS = [["butterfly", "🦋 Motyl"], ["stars", "⭐️ Gwiazdy"], ["bubbles", "🫧 Bańki"], ["ladybug", "🐞 Biedronka"], ["drawing", "✏️ Rysowanie"], ["magic", "🪄 Magia"], ["garden", "🌱 Ogród"], ["music", "🎵 Muzyka"], ["bumps", "🚧 Wyboje"], ["driver", "❤️ Bliska osoba"]];
+const dreamBox = el("div", { class: "bars" }), dreamNow = el("div");
+panels.dreams.append(
+  el("section", {}, el("h2", { text: "💭 Co pamięta – i o czym może śnić" }),
+    el("p", { class: "note", text: "Czasami (nie przy każdej drzemce, najwyżej raz na ok. 20 min i dopiero po 1,5–4,5 min snu) nad oczami pojawia się chmurka z małą scenką z tego, co ostatnio przeżył. Wspomnienia bledną przez kilka dni; częściej śni o świeżych i mocnych. Czasem dwa łączą się w coś absurdalnego. Pamięta tylko rodzaj przeżycia – żadnych wiadomości, rozmów ani nagrań. Telefon albo dotyk przerywa sen od razu." }),
+    dreamBox, dreamNow,
+    el("div", { class: "btnrow" }, cmdButton("Odśwież", () => send("w", true)), cmdButton("Śnij teraz (z pamięci)", () => send("m!"), "primary small"))),
+  actionGroup("💭 Sny", [
+    A("Motylek", "m 0", "d-butterfly", "Goni motyla, którym ostatnio się bawił.", "Po zabawie z motylami."),
+    A("Spadająca gwiazda", "m 1", "d-stars", "Nocne niebo, przelatuje spadająca gwiazda.", "Po oglądaniu gwiazd."),
+    A("Bańki", "m 2", "d-bubbles", "Bańki płyną w górę chmurki.", "Po dmuchaniu baniek."),
+    A("Biedronka", "m 3", "d-ladybug", "Biedronka spaceruje po dnie chmurki.", "Po zabawie z biedronką."),
+    A("Rysuje serce", "m 4", "d-drawing", "Pióro krąży po serduszku.", "Po rysowaniu (szczególnie po awansie)."),
+    A("Czary", "m 5", "d-magic", "Gwiazdka znika i pojawia się po drugiej stronie.", "Po czarach."),
+    A("Kwiatek", "m 6", "d-garden", "Kwiat powoli się otwiera.", "Po pracy w ogródku; najbardziej, kiedy roślina zakwitła."),
+    A("Sen rapera", "m 7", "d-music-rap", "Mini CarBuddy w fullcapie (daszkiem do tyłu) buja się, spadają nutki.", "Po tańcu do muzyki; w fullcapie – po rapie."),
+    A("Wyboje", "m 8", "d-bumps", "Mini CarBuddy podskakuje na wybojach, a on sam lekko drga przez sen.", "Po trasie z wybojami albo ostrym hamowaniem."),
+    A("Bliska osoba", "m 9", "d-driver", "Uśmiechnięty mini CarBuddy i bijące serce.", "Po powitaniu ulubionego kierowcy lub po rozłące."),
+    A("Motyl w fullcapie", "m 0 7", "d-butterfly-rap", "Absurdalny sen: motyl w czapce tańczy do rapu.", "Pamięta motyle i rap."),
+    A("Biedronka na wybojach", "m 3 8", "d-ladybug-bumps", "Biedronka podskakuje na wyboistej drodze.", "Pamięta biedronkę i wyboistą trasę."),
+    A("Kwiat pod gwiazdami", "m 6 1", "d-garden-stars", "Kwiat rozkwita pod nocnym niebem.", "Pamięta ogródek i gwiazdy."),
+    A("Kontrola policji", "m 10", "d-police", "Policjant zatrzymuje jego autko (albo biedronkę), czasem policja goni motyla.", "Po alercie Yanosika o policji."),
+    A("Stłuczka", "m 11", "d-accident", "Dwa autka się stukają, krążą gwiazdki; albo przeskakuje nad autem.", "Po alercie o wypadku."),
+    A("Fotoradar", "m 12", "d-radar", "Błysk, gdy przejeżdża; albo biedronka pozuje do zdjęcia.", "Po alercie o fotoradarze."),
+    A("Korek", "m 13", "d-jam", "Stoi w korku i ziewa, czasem trąbi, a biedronka przelatuje nad wszystkimi.", "Po alercie o korku."),
+    A("Kontrola biedronki", "m 10 3", "d-police-ladybug", "Policja zatrzymuje biedronkę do kontroli.", "Pamięta policję i biedronkę."),
+  ]),
+  el("p", { class: "note", text: "Po przebudzeniu (mniej więcej co trzeci raz) sen jeszcze chwilę w nim siedzi – rozgląda się za motylem, buja się do rytmu, otrząsa się po wybojach albo rozmarzony patrzy w górę." }));
+function renderDreams() {
+  dreamBox.replaceChildren(...DREAMS.map(([key, title]) => {
+    const v = parseFloat(B.dreams[key]) || 0;
+    return barRow(title, v, v > 0.08 ? `${Math.round(v * 100)}%` : "–", "purple");
+  }));
+  const now = B.dreams.dreaming;
+  dreamNow.replaceChildren(now && now !== "-" ? el("div", { class: "flag", text: `🌙 Teraz śni: ${now}` }) : "");
+}
+
+// --- Relacje
+const STYLES = ["buddy", "crush", "neutral", "shy"];
+const relRows = [];
+function relationRow(p) {
+  const r = { p, style: 0, shy: 30, romance: 10, showoff: 40, dragging: false };
+  const name = el("span", { class: "name" });
+  const gift = el("span", { class: "gift" });
+  const seg = el("div", { class: "seg" }, ["Kumpel", "Sympatia", "Neutralna", "Nieśmiała"].map((label, i) =>
+    needs(el("button", { onclick: () => {
+      r.style = i; paintSeg();
+      const d = B.relations[p] || {};
+      if (STYLES.indexOf(d.style) !== i) send(`U ${p} ${i}`);
+    } }, label))));
+  const paintSeg = () => [...seg.children].forEach((b, i) => b.classList.toggle("on", i === r.style));
+  const slider = (title, key) => {
+    const label = el("span");
+    const input = needs(el("input", { type: "range", min: 0, max: 100, step: 1 }));
+    const show = () => { label.textContent = `${title}: ${Math.round(r[key])}`; };
+    input.addEventListener("pointerdown", () => { r.dragging = true; });
+    input.addEventListener("input", () => { r[key] = +input.value; show(); });
+    input.addEventListener("change", () => { r.dragging = false; r[key] = +input.value; show();
+      send(`U ${p} ${r.style} ${Math.round(r.shy)} ${Math.round(r.romance)} ${Math.round(r.showoff)}`); });
+    input.addEventListener("blur", () => { r.dragging = false; });
+    r["set_" + key] = () => { input.value = r[key]; show(); };
+    return el("label", {}, label, input);
+  };
+  const row = el("div", { class: "rel" },
+    el("div", { class: "top" }, name, seg, gift),
+    el("div", { class: "sliders" }, slider("Nieśmiałość", "shy"), slider("Romantyczność", "romance"), slider("Popisywanie się", "showoff")),
+    el("div", { class: "btnrow", style: "margin-top:0" },
+      cmdButton(`Test: powitanie (V ${p})`, () => send(`V ${p}`)),
+      cmdButton("Test: nie było go tydzień", () => send(`U ${p} away 7`)),
+      cmdButton("Test: ma dla tej osoby kwiatek", () => send(`U ${p} gift`))));
+  r.sync = () => {
+    const d = B.relations[p] || {};
+    name.textContent = d.name || defaultNames[p];
+    name.title = name.textContent;
+    gift.textContent = d.gift === "1" ? "🌷 czeka na nią kwiatek" : "";
+    if (!r.dragging) {
+      for (const k of ["shy", "romance", "showoff"]) { const v = parseFloat(d[k]); if (!isNaN(v)) r[k] = v; r["set_" + k](); }
+    }
+    const s = STYLES.indexOf(d.style); if (s >= 0) r.style = s;
+    paintSeg();
+  };
+  r.sync();
+  relRows[p] = r;
+  return row;
+}
+function renderRelation(p) { relRows[p]?.sync(); }
+panels.relations.append(
+  el("section", {}, el("h2", { text: "💗 Kogo jak traktuje" }),
+    el("p", { class: "note", text: "Ustawiasz to osobno dla każdej osoby – płeć nie ma tu znaczenia. Styl ustawia gotowe wartości, a suwakami możesz je dopasować. Przywiązanie rośnie samo (wspólne trasy, głaskanie), a nastrój decyduje, czy w ogóle ma ochotę – dlatego dwa CarBuddy przy tej samej osobie zachowają się inaczej." }),
+    el("div", { style: "display:flex;flex-direction:column;gap:8px" }, EVERYONE.map(relationRow)),
+    el("div", { class: "btnrow" }, cmdButton("Odśwież (U)", () => send("U")))),
+  actionGroup("💗 Co robi", [
+    A("Kokardka", "", "r-bow", "Zakłada kokardkę, poprawia ją, odwraca wzrok i zerka – zauważyłaś?", "Czasem przy powitaniu sympatii (zależy od romantyczności)."),
+    A("Kokardka schowana", "", "r-bow-hidden", "Zakłada kokardkę… i szybko ją chowa, czerwieniąc się.", "Jak wyżej, kiedy jest nieśmiały."),
+    A("Kwiatek z ogródka", "", "r-flower", "Zerka na swoją doniczkę, zastanawia się, wyjmuje kwiatek i nieśmiało przesuwa go w jej stronę. Serduszko, maślane oczy.", "Pierwszy kwiat w ogródku zachowuje dla sympatii i czeka, aż przyjdzie – choćby tydzień. Tylko raz."),
+    A("…a jednak kaktus", "", "r-cactus", "Ze stresu zamiast kwiatka wręcza kaktusa. Wstyd, potem śmiech.", "Czasem – tym częściej, im bardziej jest nieśmiały (albo gdy hodował kaktusa)."),
+    A("Nieśmiały adorator", "", "r-admirer", "Zerka, szybko odwraca wzrok, zerka znowu – i się rumieni.", "Na postoju, co kilkanaście minut, przy sympatii, która go onieśmiela."),
+  ]),
+  el("p", { class: "note", text: "Popisy: przy powitaniu czasem pokazuje sztuczkę – gwiazdka wraca jako serduszko; jeśli nie wyjdzie, rumieni się i sprawdza, czy widziałaś. Po kilku dniach rozłąki: serduszka, mrugnięcie i kwiatek, a w złym humorze najpierw udaje obojętnego, ale długo nie wytrzymuje." }));
+
+// --- Yanosik
+panels.yanosik.append(
+  actionGroup("Test: co wysyła Yanosik", [
+    A("Pokaż zapisane powiadomienia", "v", null, "CarBuddy zapisuje tytuł i treść powiadomień tylko z aplikacji Yanosik (ostatnie 16, przetrwają wyłączenie auta). Pojawią się w logu po prawej.", "Jedź z Yanosikiem działającym w tle, potem podłącz CarBuddy do komputera."),
+    A("Wyczyść zapisane", "f", null, "Usuwa zapisane powiadomienia Yanosika.", ""),
+  ]),
+  el("div", { class: "info", text: "🚗 CarBuddy reaguje na powiadomienia z Yanosika albo Waze (wybierasz w Ustawieniach; z iPhone'a albo z Androida z aplikacją CarBuddy). Odległość pokazuje u góry ekranu." }),
+  actionGroup("Zdarzenia z Yanosika", [
+    A("📸 Fotoradar", "y 0 600", "y-radar", "Wyciąga małą „suszarkę” radarową i mierzy ci prędkość i cwaniacko mruży oko.", "Fotoradar przed tobą."),
+    A("👮 Kontrola policji", "y 1 500", "y-police", "Zakłada policyjną czapkę i robi poważną minę.", "Kontrola policji."),
+    A("🚨 Wypadek", "y 2 200", "y-accident", "Przerażone oczy, migające niebieskie światła i dwa zderzone samochodziki.", "Wypadek na trasie."),
+    A("🚧 Roboty drogowe", "y 3 900", "y-roadworks", "Zakłada kask budowlany i pokazuje łopatę.", "Roboty drogowe."),
+    A("🚗 Korek", "y 4 100", "y-jam", "Znudzony, przewraca oczami, przed nim sznur samochodzików.", "Korek przed tobą."),
+    A("⚠️ Niebezpieczeństwo", "y 5 500", "y-danger", "Robi wielkie oczy i pokazuje znak ostrzegawczy.", "Niebezpieczeństwo na drodze."),
+    A("🚙 Nieoznakowany patrol", "y 6 600", "y-unmarked", "Zakłada ciemne okulary i podejrzliwie rozgląda się na boki.", "Nieoznakowany radiowóz."),
+    A("🛑 Zatrzymany pojazd", "y 7 300", "y-stopped", "Zaciekawione spojrzenie i mały trójkąt ostrzegawczy.", "Pojazd na poboczu."),
+  ]));
+
+// --- Ustawienia
+panels.settings.append(
+  pads("Dźwięk (teraz: –)", [["🔉", "Z dźwiękiem", () => { send("6"); send("@ mute 0"); }], ["🔇", "Bez dźwięku", () => send("5")]], "modeTitle",
+       "Bez dźwięku nie wydaje żadnych odgłosów – oczy i miny zostają."),
+  pads("Wyczucie jazdy (czułość: –)", [["+", "Bardziej wrażliwy", () => send("+")], ["−", "Mniej wrażliwy", () => send("-")], ["◎", "Kalibruj (auto musi stać)", () => send("c")]], "sensTitle",
+       "Od jak mocnego hamowania, zakrętu czy dziury reaguje. Reaguje bez powodu – zmniejsz; nie zauważa jazdy – zwiększ. Kalibruj, gdy jest już zamocowany, a auto stoi."),
+  brightnessSection(),
+  accessorySection(),
+  festiveSection(),
+  updateSection(),
+  pads("Ostrzeżenia drogowe (teraz: –)", [["🚗", "Yanosik", () => send("@ nav yanosik")], ["🗺", "Waze", () => send("@ nav waze")], ["⧉", "Oba", () => send("@ nav both")]], "navTitle",
+       "Z której aplikacji na Twoim telefonie ma brać fotoradary, kontrole i korki."),
+  pads("Godzina", [["🕒", "Ustaw godzinę z tego komputera", () => { const s = stamp(); send(`T ${s.day} ${s.time}`); send(zoneCommand()); }]], null,
+       "Zwykle bierze ją sam z telefonu. Przydaje się, zanim sparujesz telefon."),
+  pads("Ustawienia z telefonu, bez kabla", [["📶", "Pokaż kod QR na jego ekranie", () => send("W")]], null,
+       "CarBuddy włączy własne Wi-Fi i pokaże kod QR – zeskanuj go telefonem, żeby otworzyć ustawienia. Kliknij jeszcze raz, żeby wyłączyć."),
+  pads("Poznawanie was", [["🧠", "Uczy się", () => send("u"), "learnBtn"]], null,
+       "Z czasem poznaje kierowców i trochę się przy tym zmienia. Gdy zatrzymasz naukę, zostanie taki, jaki jest teraz."),
+  pads("Temperatura w aucie", [
+    ["🌡", "Czujnik temperatury", () => send("w"), "tempBtn"],  // found by itself; click looks again
+    ["🧪", "Test: gorąco / zimno / normalnie", () => send("H")],
+  ], null, "Z czujnikiem temperatury w obudowie CarBuddy czuje, gdy w aucie jest zimno albo upał."),
+  pads("Kopia zapasowa", [
+    ["⬇", "Zapisz kopię do pliku…", exportSoul],
+    ["⬆", "Przywróć z pliku…", () => { $("soulFile").value = ""; $("soulFile").click(); }],
+  ], null, "W kopii jest cały on: charakter, wspomnienia, kierowcy i ustawienia. Z niej przeniesiesz go też na nową płytkę."),
+  pads("Dla serwisu", [
+    ["ⓘ", "Pokaż jego stan", () => send("i")],
+    ["▤", "Pokaż jego pamięć", () => send("I")],
+  ], null, "Pokazują techniczne dane w okienku po prawej – przydają się, gdy zgłaszasz błąd. Na CarBuddy nic się nie zmienia."),
+  el("p", { class: "note", id: "importProgress" }));
+function setLevel(level) {
+  try { localStorage.setItem(LEVEL_KEY, level); } catch {}
+  const u = new URL(location.href); u.searchParams.delete("dev"); u.searchParams.delete("prog"); location.href = u.toString();
+}
+// Before the developer mode: a warning about spoilers, and a switch to agree before the way in opens.
+function devGate() {
+  const agree = el("input", { type: "checkbox", role: "switch" });
+  const enter = el("button", { class: "primary", disabled: true, onclick: () => setLevel("dev") }, "Wejdź do trybu DEV");
+  agree.addEventListener("change", () => { enter.disabled = !agree.checked; });
+  const d = el("dialog", { class: "gate" },
+    el("h3", { text: "Uwaga, spoilery! 🙈" }),
+    el("p", {}, "Tryb DEV jest dla ", el("b", { text: "twórców" }), " – osób, które programują, budują i rozwijają swojego małego pasażera."),
+    el("p", { text: "Znajdziesz tu wszystkie jego miny, reakcje, zabawy i sekrety, rozpisane jak na dłoni. Jeśli wolisz odkrywać CarBuddy'ego w trasie, zostań po tej stronie – niespodzianki są najfajniejsze, kiedy zaskakują." }),
+    el("label", {}, agree, el("span", { text: "Rozumiem i zgadzam się – chcę zobaczyć wszystko" })),
+    el("div", { class: "btnrow" }, el("button", { onclick: () => d.close() }, "Wolę niespodzianki"), enter));
+  d.addEventListener("close", () => d.remove());
+  document.body.append(d);
+  d.showModal();
+}
+panels.settings.append(el("section", {}, el("h2", { text: "Dla twórców" }),
+  el("p", { class: "note", text: {
+    owner: "Tryb programisty: konsola, log, więcej ustawień i narzędzia do szukania błędów – bez zdradzania niespodzianek. DEV: wszystko, łącznie z jego minami i zachowaniami.",
+    prog: "Tryb programisty jest włączony. DEV pokaże też jego miny i zachowania (spoilery).",
+    dev: "Tryb DEV jest włączony: wszystko, łącznie ze spoilerami.",
+  }[LEVEL] + " Przy zmianie strona się przeładuje – połącz się ponownie." }),
+  el("div", { class: "btnrow" },
+    LEVEL === "owner" && el("button", { onclick: () => setLevel("prog") }, "Tryb programisty"),
+    LEVEL === "prog" && el("button", { onclick: () => setLevel("owner") }, "Wyłącz tryb programisty"),
+    LEVEL === "dev" && el("button", { onclick: () => setLevel("prog") }, "Wróć do trybu programisty"),
+    LEVEL === "dev" && el("button", { onclick: () => setLevel("owner") }, "Zwykły panel"),
+    LEVEL !== "dev" && el("button", { class: "dev", onclick: devGate }, "DEV"))));
+$("soulFile").addEventListener("change", e => { const f = e.target.files[0]; if (f) importSoul(f); });
+
+// ---------------------------------------------------------------------------------------------
+// Log: kept in memory only (never stored), at most 2000 lines
+const logLines = [];
+let logQueue = [];
+let filter = "";
+function lineClass(l) { return l.startsWith(">") ? "out" : l.startsWith("[app]") ? "app" : (l.startsWith("[act]") || l.startsWith("[react]")) ? "hl" : ""; }
+function append(line) {
+  logLines.push(line);
+  if (logLines.length > 2000) logLines.splice(0, logLines.length - 2000);
+  logQueue.push(line);
+  if (logQueue.length === 1) requestAnimationFrame(flushLog);
+}
+function flushLog() {
+  const box = $("log");
+  const atEnd = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+  const f = filter.toLocaleLowerCase();
+  const frag = document.createDocumentFragment();
+  for (const l of logQueue) if (!f || l.toLocaleLowerCase().includes(f)) frag.append(el("div", { class: lineClass(l), text: l }));
+  logQueue = [];
+  box.append(frag);
+  while (box.childElementCount > 2000) box.firstChild.remove();
+  if (atEnd) box.scrollTop = box.scrollHeight;
+}
+function rebuildLog() {
+  logQueue = [];
+  const f = filter.toLocaleLowerCase(), box = $("log");
+  box.replaceChildren(...logLines.filter(l => !f || l.toLocaleLowerCase().includes(f)).map(l => el("div", { class: lineClass(l), text: l })));
+  box.scrollTop = box.scrollHeight;
+}
+$("filter").addEventListener("input", e => { filter = e.target.value; clearTimeout(rebuildLog.h); rebuildLog.h = setTimeout(rebuildLog, 120); });
+$("clear").onclick = () => { logLines.length = 0; logQueue = []; $("log").replaceChildren(); };
+function sendTyped() { const c = $("cmd").value.trim(); if (!c) return; send(c); $("cmd").value = ""; }
+$("sendCmd").onclick = sendTyped;
+$("cmd").addEventListener("keydown", e => { if (e.key === "Enter") sendTyped(); });
+needs($("sendCmd"));
+$("connect").onclick = connectClicked;
+
+// ---------------------------------------------------------------------------------------------
+// Demo: a simulated board that answers like the firmware (index.html?demo)
+const demo = (() => {
+  const EMOTIONS = ["neutral", "happy", "sleepy", "curious", "thinking", "surprised", "love", "angry", "excited", "confused", "scared",
+    "embarrassed", "sad", "dizzy", "ouch", "asleep", "bored", "annoyed", "startled", "sneeze", "strain", "shake-off", "drowsy", "petted",
+    "savor", "rattled", "joy", "hi", "relaxed", "attentive", "waking", "eyeroll", "queasy", "scheming", "hiccup", "shy", "reproach",
+    "playdead", "sleeppeek", "grumpy", "tired", "dreamy", "aiming", "flirt", "kiss", "worried"];
+  const ACTS = ["glance", "look at driver", "wink", "daydream", "cold sneeze", "hot, wipes sweat", "bored passenger", "are we there yet",
+    "warm and drowsy", "wants attention", "not dancing (honest)", "car-sick", "hiccups", "random sneeze", "highway nap", "plays dead",
+    "hide and seek", "scheming", "happy memory", "nightmare", "blows a kiss", "hobby: butterflies", "hobby: stars", "hobby: bubbles", "hobby: ladybug",
+    "hobby: drawing", "hobby: magic", "hobby: garden"];
+  const MOODS = ["content", "cheerful", "grumpy", "sleepy", "bored", "smitten"];
+  const RESTING = ["neutral", "happy", "grumpy", "tired", "bored", "dreamy"];
+  const MODES = ["quiet", "normal"];
+  const HOBBY = ["butterfly", "stars", "bubbles", "ladybug", "drawing", "magic", "garden"];
+  const OUTCOMES = [["lands on his eye", "catch attempt, missed", "lands and tickles, achoo"], ["shooting star", "counting stars", "a star bonks him"],
+    ["pops in the air", "pops on his eye", "a big one floats away"], ["climbs on, shaken off", "walks across", "climbs on and tickles"],
+    ["wobbly heart", "star that won't close", "his own face"], ["vanishes, reappears elsewhere", "comes back as a heart", "the spell fizzles"],
+    ["tends it", "wow, it grew", "the first flower"]];
+  const MOTIFS = ["butterfly", "stars", "bubbles", "ladybug", "drawing", "magic", "garden", "music", "bumps", "driver"];
+  const STAGES = ["empty pot", "seed", "sprout", "two leaves", "bush", "bud", "in bloom"];
+  const GENRES = ["none", "rap", "techno", "pop", "rock", "chill"];
+  const YANO = ["radar", "police", "accident", "roadworks", "jam", "danger", "unmarked", "stopped"];
+  let rnd = 12345;
+  const rand = () => { rnd = (rnd * 1103515245 + 12345) & 0x7fffffff; return rnd / 0x7fffffff; };
+  const pick = a => a[Math.floor(rand() * a.length)];
+  const f2 = v => v.toFixed(2), f0 = v => Math.round(v).toString();
+
+  let timers = [], running = false, face = "neutral", faceUntil = 0;
+  const s = {
+    mood: 1, drive: "parked", asleep: 0, muted: 0, mode: 1, sens: 1.0, learning: 1, driver: 0, telemetry: false,
+    names: ["Kierowca 1", "Kierowca 2", "Kierowca 3", "Kierowca 4"], phones: [1, 0, 0, 0],
+    hobbies: HOBBY.map((h, i) => ({ interest: [56, 31, 44, 22, 68, 37, 49][i], plays: [3, 0, 7, 1, 14, 26, 5][i] })),
+    focus: 4, playing: -1,
+    dreams: [0.62, 0.0, 0.34, 0.05, 0.81, 0.47, 0.22, 0.55, 0.12, 0.73], dreaming: -1,
+    garden: { planted: 1, growth: 0.41, water: 0.63, dry: 0, bloom: 0, blooms: 1, gen: 2, cactus: 0 },
+    rel: [{ style: 0, shy: 30, romance: 10, showoff: 40 }, { style: 1, shy: 55, romance: 80, showoff: 60 }, { style: 2, shy: 20, romance: 0, showoff: 30 }, { style: 0, shy: 30, romance: 10, showoff: 40 }],
+    gift: -1,
+    drawings: [],  // newest last: {minute, outcome, level, temper, seed}
+    yanosik: [["2026-10-29 17:42:10", 1, "Fotoradar", "Za 600 m fotoradar, ograniczenie 70"], ["2026-10-29 17:55:31", 4, "Korek", "Korek na trasie, 2 km"]],
+    soul: null,  // import being received
+    ota: { state: 0, wifi: "", msg: "" },
+    country: "pl", birthdays: [0, 0, 0, 0],
+  };
+  const otaLine = () => `[ota] version=0.7.0 build=70 board=amoled18 state=${s.ota.state} progress=0% new=- url=https://example.invalid/manifest.json wifi=${s.ota.wifi || "-"} msg=${s.ota.msg}`;
+  const festiveToday = () => {
+    const d = new Date(), md = (d.getMonth() + 1) * 100 + d.getDate();
+    if (s.birthdays.includes(md)) return "birthday";
+    return ({ 101: "new-year", 1231: "new-years-eve", 214: "valentine", 1031: "halloween", 1224: "christmas-eve", 1225: "christmas", 1226: "christmas" })[md] || "none";
+  };
+  const festiveLine = (showing) => `[festive] today=${festiveToday()} showing=${showing || "none"} country=${s.country} birthdays=${s.birthdays.map(b => String(b).padStart(4, "0")).join(",")}`;
+  const localMinute = (d) => Math.floor(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate(), d.getHours(), d.getMinutes()) / 60000);
+  const now = new Date();
+  [[0, 0, 0, 1], [1, 0, 1, 2], [2, 1, 0, 3], [0, 1, 0, 4], [1, 2, 3, 5], [2, 2, 0, 6]].forEach(([outcome, level, temper, seed], i) =>
+    s.drawings.push({ minute: i === 0 ? 0 : localMinute(new Date(now - (6 - i) * 86400000 * 1.7)), outcome, level, temper, seed }));
+  const drawTotal = () => s.drawings.length + 8;  // older ones no longer kept (the board keeps the last 24)
+
+  function out(lines, delay = 40) {
+    if (!running) return;
+    // Like the serial reader: one line at a time, trimmed, empty ones skipped.
+    const t = setTimeout(() => { if (running) for (const l of [].concat(lines)) for (const one of l.split("\n")) { const x = one.trim(); if (x) handle(x); } }, delay);
+    timers.push(t);
+  }
+  function later(ms, fn) { const t = setTimeout(() => running && fn(), ms); timers.push(t); }
+  function showFace(name, seconds = 4) {
+    face = name; faceUntil = Date.now() + seconds * 1000;
+    showVirtual(name, s.asleep ? "asleep" : RESTING[s.mood]);
+  }
+  function stateLine() {
+    if (Date.now() > faceUntil) face = s.asleep ? "asleep" : RESTING[s.mood];
+    showVirtual(face, s.asleep ? "asleep" : RESTING[s.mood]);
+    return `[state] mood=${MOODS[s.mood]} drive=${s.drive} face=${face} resting=${RESTING[s.mood]} asleep=${s.asleep} muted=${s.muted} mode=${MODES[s.mode]} sens=${f2(s.sens)} learning=${s.learning} nav=${s.nav || "yanosik"} sensor=0 fps=${58 + Math.floor(rand() * 3)} driver=${s.names[s.driver]}`;
+  }
+  const level = plays => plays >= 25 ? 2 : plays >= 10 ? 1 : 0;
+  function hobbiesLine() {
+    return `[hobbies] playing=${s.playing >= 0 ? HOBBY[s.playing] : "-"}` + s.hobbies.map((h, i) => ` ${HOBBY[i]}=${f0(h.interest)}/${h.plays}/${level(h.plays)}`).join("") + ` focus=${s.focus >= 0 ? HOBBY[s.focus] : "-"}`;
+  }
+  const stageOf = g => !g.planted ? 0 : g.growth < 0.08 ? 1 : g.growth < 0.25 ? 2 : g.growth < 0.5 ? 3 : g.growth < 0.75 ? 4 : g.growth < 1 ? 5 : 6;
+  function gardenPoll() { const g = s.garden; return `[garden] planted=${g.planted} stage=${stageOf(g)} growth=${f2(g.growth)} water=${f2(g.water)} wilted=${g.dry > 3 ? 1 : 0} blooms=${g.blooms} cactus=${g.cactus}`; }
+  function gardenPrint() { const g = s.garden; return `[garden] ${g.cactus ? "cactus" : "flower"}: planted=${g.planted} stage=${STAGES[stageOf(g)]} growth=${f2(g.growth)} water=${f2(g.water)} dry=${g.dry.toFixed(1)}d bloom=${g.bloom.toFixed(1)}d blooms=${g.blooms} gen=${g.gen}`; }
+  function relationLines() {
+    return s.rel.map((r, i) => `[relation] p=${i} style=${STYLES[r.style]} shy=${f0(r.shy)} romance=${f0(r.romance)} showoff=${f0(r.showoff)} gift=${s.gift === i ? 1 : 0} name=${s.names[i]}`);
+  }
+  // A pen path like the firmware's drawingPath(): 49 points, x,y,pen, around (120, 232).
+  function penPath(d) {
+    let r = d.seed * 9301 + 49297;
+    const noise = () => { r = (r * 9301 + 49297) % 233280; return r / 233280 - 0.5; };
+    const wob = [5, 2.2, 0.6][d.level];
+    const pts = [];
+    const N = 48;
+    for (let k = 0; k <= N; k++) {
+      const t = k / N;
+      let x, y, down = 1;
+      if (d.outcome === 0) {  // heart
+        const a = t * Math.PI * 2;
+        x = 120 + 2.6 * 16 * Math.sin(a) ** 3;
+        y = 228 - 2.6 * (13 * Math.cos(a) - 5 * Math.cos(2 * a) - 2 * Math.cos(3 * a) - Math.cos(4 * a));
+      } else if (d.outcome === 1) {  // star that doesn't close
+        const seg = Math.min(4.999, t * 5), j = Math.floor(seg), u = seg - j;
+        const v = q => [120 + 42 * Math.sin(q * 4 * Math.PI / 5), 234 - 42 * Math.cos(q * 4 * Math.PI / 5)];
+        const [ax, ay] = v(j), [bx, by] = v(j + 1);
+        const miss = j === 4 ? u * (14 - 8 * d.level) : 0;
+        x = ax + (bx - ax) * u + miss; y = ay + (by - ay) * u + miss * 0.6;
+      } else {  // self-portrait: face, two eyes, smile
+        if (k <= 30) { const a = k / 30 * Math.PI * 2; x = 120 + 40 * Math.cos(a); y = 232 + 38 * Math.sin(a); }
+        else if (k === 31) { x = 106; y = 222; down = 0; }
+        else if (k === 32) { x = 106; y = 226; }
+        else if (k === 33) { x = 134; y = 222; down = 0; }
+        else if (k === 34) { x = 134; y = 226; }
+        else if (k === 35) { x = 104; y = 242; down = 0; }
+        else { const a = (k - 36) / 12 * Math.PI; x = 120 - 16 * Math.cos(a); y = 242 + 9 * Math.sin(a); }
+      }
+      pts.push(`${f0(x + noise() * wob)},${f0(y + noise() * wob)},${down}`);
+    }
+    return pts.join(";");
+  }
+  function drawingLines() {
+    const total = drawTotal(), list = s.drawings.slice().reverse();
+    return [`[drawings] total=${total}`, ...list.map((d, i) => `[drawing] n=${i} total=${total - i} minute=${d.minute} outcome=${d.outcome} level=${d.level} temper=${d.temper} pts=${penPath(d)}`), "[drawings] end"];
+  }
+  const briLine = () => `[bri] mode=${s.briAuto === 0 ? "fixed" : "auto"} fixed=${s.briFix ?? 100} sleep=${s.briSleep ?? 60} now=${s.briAuto === 0 ? s.briFix : 100} slots=${(s.slots = s.slots || ["06:00/50", "07:00/100", "18:00/65", "21:00/35", "23:00/15"]).join(",")}`;
+  const settingsLine = () => `[settings] muted=${s.muted} volume=70 mode=${MODES[s.mode]} sens=${f2(s.sens)} learning=${s.learning} pairing=-1 nav=${s.nav || "yanosik"} sensor=0 cabin=0.0`;
+  // His soul: what an export looks like (fake data in the real format; "genres" holds made-up artists).
+  function soulExport() {
+    const hex = (n, seed) => { let r = seed, h = ""; for (let i = 0; i < n; i++) { r = (r * 1103515245 + 12345) & 0x7fffffff; h += (r >> 16 & 255).toString(16).padStart(2, "0"); } return h; };
+    const text = t => [...enc.encode(t)].map(b => b.toString(16).padStart(2, "0")).join("");
+    const entries = [["memory", "pers", 7, hex(40, 1)], ["memory", "prof0", 7, text(s.names[0]) + hex(60, 2)], ["memory", "prof1", 7, text(s.names[1]) + hex(60, 3)],
+      ["memory", "prof2", 7, text(s.names[2]) + hex(60, 4)], ["memory", "active", 1, "00"], ["hobby", "book", 7, hex(112, 5)], ["hobby", "garden", 7, hex(36, 6)],
+      ["hobby", "draw", 7, hex(220, 7)], ["hobby", "dreams", 7, hex(52, 8)], ["rel2", "rel", 7, hex(48, 9)], ["genres", "tags", 7, text("Demo Artist") + hex(90, 10)],
+      ["genres", "n", 4, "03000000"], ["yano", "e0", 7, hex(96, 11)], ["settings", "cfg", 7, hex(24, 12)]];
+    const lines = ["[soul] begin 1"];
+    for (const [ns, key, type, data] of entries)
+      for (let off = 0; off === 0 || off * 2 < data.length; off += 48) lines.push(`[soul] p ${ns} ${key} ${type} ${off} ${data.slice(off * 2, off * 2 + 96)}`);
+    lines.push(`[soul] end ${entries.length} 5c0ffee1`);
+    return lines;
+  }
+  function soulImport(w) {
+    if (w.startsWith("begin")) { s.soul = { entries: 0, pers: false }; return "[soul] import started"; }
+    if (!s.soul) return '[soul] send "# begin" first';
+    if (w.startsWith("p ")) {
+      const [ns, key, , off] = w.slice(2).split(" ");
+      if (!["memory", "hobby", "rel2", "genres", "yano", "settings", "rel", "phone"].includes(ns)) { s.soul = null; return "[soul] import failed: bad line (nothing was changed)"; }
+      if (off === "0") s.soul.entries++;
+      if (ns === "memory" && key === "pers") s.soul.pers = true;
+      return "[soul] ok";
+    }
+    if (w.startsWith("end")) {
+      const n = parseInt(w.split(" ")[1]);
+      const imp = s.soul; s.soul = null;
+      if (n !== imp.entries) return "[soul] import failed: checksum does not match (file damaged or cut off) (nothing was changed)";
+      if (!imp.pers) return "[soul] import failed: no character in it (not an export of his memory) (nothing was changed)";
+      later(900, () => lost());  // he restarts with the loaded memory
+      return `[soul] imported ${n} entries, restarting`;
+    }
+    return null;
+  }
+  function decide(event, value, options) {
+    const r = pick(options);
+    const m = `mood v+${f2(0.2 + rand() * 0.4)} a${f2(0.3 + rand() * 0.3)} e${f2(0.5 + rand() * 0.3)} b${f2(rand() * 0.3)} stress${f2(rand() * 0.3)}`;
+    out([`[decide] ${event}(${f2(value)}) ${m} | ${options.map((o, i) => `${o[0]} ${[57, 24, 11, 8][i] || 5}%`).join(", ")} -> ${r[0]}`, `[react] ${r[0]} (${event})`]);
+    showFace(r[1]);
+  }
+  function play(h, outcome) {
+    const o = outcome >= 0 && outcome <= 2 ? outcome : Math.floor(rand() * 3);
+    s.playing = h; s.asleep = 0;
+    out(`[hobby] ${HOBBY[h]}: ${OUTCOMES[h][o]} (interest ${f0(s.hobbies[h].interest)})`, 300);
+    later(4500, () => {
+      s.playing = -1;
+      const st = s.hobbies[h]; const before = level(st.plays);
+      st.plays++; st.interest = Math.min(100, st.interest + 1.5);
+      s.dreams[h] = Math.min(1, s.dreams[h] + 0.3);
+      if (h === 4) s.drawings.push({ minute: localMinute(new Date()), outcome: o, level: before, temper: Math.floor(rand() * 4), seed: Math.floor(rand() * 1000) });
+      if (h === 6) { s.garden.water = 1; s.garden.dry = 0; }
+      const lines = [];
+      if (level(st.plays) > before) lines.push(`[hobby] ${HOBBY[h]}: now ${["novice", "practised", "master"][level(st.plays)]}`);
+      lines.push(`[hobby] ${HOBBY[h]} done (interest now ${f0(st.interest)})`);
+      out(lines, 0);
+    });
+  }
+
+  function command(line) {
+    const c = line[0], rest = line.slice(1).trim();
+    const num = parseInt(rest);
+    switch (c) {
+      case "w": out([stateLine(), hobbiesLine(), "[dreams] dreaming=" + (s.dreaming >= 0 ? MOTIFS[s.dreaming] : "-") + MOTIFS.map((m, i) => ` ${m}=${f2(s.dreams[i])}`).join(""), gardenPoll()], 25); break;
+      case "h": out([`[emotions] ${EMOTIONS.join("|")}`, `[acts] ${ACTS.join("|")}`, `[moods] ${MOODS.join("|")}`]); break;
+      case "U": {
+        const m = rest.match(/^(\d+)\s+(.*)$/);
+        const p = m ? +m[1] : -1;
+        if (m && p >= 0 && p < PEOPLE) {
+          const args = m[2].trim();
+          if (args.startsWith("gif")) s.gift = p;
+          else if (args.startsWith("away")) { /* last met moved back */ }
+          else {
+            const v = args.split(/\s+/).map(Number);
+            if (v[0] >= 0 && v[0] < 4) {
+              const def = [[30, 10, 40], [60, 80, 60], [20, 0, 30], [80, 20, 10]][v[0]];
+              const r = { style: v[0], shy: def[0], romance: def[1], showoff: def[2] };
+              if (v.length === 4) { r.shy = clamp(v[1], 0, 100); r.romance = clamp(v[2], 0, 100); r.showoff = clamp(v[3], 0, 100); }
+              s.rel[p] = r;
+              showFace(v[0] === 1 ? "dreamy" : "joy", 2);
+            }
+          }
+        }
+        out(relationLines());
+        break;
+      }
+      case "o":
+        if (rest.startsWith("d")) out(drawingLines(), 60);
+        else if (isNaN(num)) out(s.hobbies.map((h, i) => `[hobby] ${HOBBY[i]}: interest ${f0(h.interest)}, familiarity ${f0(h.plays * 3)}, played ${h.plays} times (${["novice", "practised", "master"][level(h.plays)]}), last: -`));
+        else if (num >= 0 && num < 7) play(num, parseInt(rest.split(/\s+/)[1]));
+        break;
+      case "m":
+        if (rest.startsWith("!") || !isNaN(num)) {
+          const motif = rest.startsWith("!") ? s.dreams.indexOf(Math.max(...s.dreams)) : clamp(num, 0, 9);
+          s.dreaming = motif; s.asleep = 1;
+          out(`[dream] ${MOTIFS[motif]}${rest.split(/\s+/)[1] ? " + " + MOTIFS[clamp(+rest.split(/\s+/)[1], 0, 9)] : ""}`, 200);
+          later(8000, () => { s.dreaming = -1; });
+        } else out(s.dreams.map((v, i) => v > 0 ? `[dream] remembers ${MOTIFS[i]}: ${f2(v)}` : "").filter(Boolean));
+        break;
+      case "z": {
+        const days = parseFloat(rest);
+        const g = s.garden, lines = [];
+        if (days > 0) {
+          const wet = Math.min(days, g.water * 2);
+          g.growth = Math.min(1, g.growth + wet * (g.cactus ? 0.02 : 0.04)); g.water = Math.max(0, g.water - days / 2);
+          if (g.water === 0) g.dry += days - wet;
+          if (g.growth >= 1) g.bloom += days;
+          lines.push(`[garden] ${days.toFixed(1)} day(s) later`);
+        }
+        lines.push(gardenPrint());
+        out(lines);
+        break;
+      }
+      case "@":
+        if (rest.startsWith("app")) out([...s.names.map((n, i) => `[driver] p=${i} active=${s.driver === i ? 1 : 0} phones=${s.phones[i]} phone=${i === 0 ? 1 : 0} name=${n}`), "[app] subscribed=0 queued=0 sent=0 failed=0", settingsLine(), briLine()]);
+        else if (rest.startsWith("driver")) { s.driver = clamp(parseInt(rest.slice(6)) || 0, 0, 2); out(`[memory] driver now ${s.names[s.driver]}`); }
+        else if (rest.startsWith("bri")) {
+          const a = rest.slice(3).trim().split(/\s+/);
+          if (a[0] === "auto") s.briAuto = 1; else if (a[0] === "fixed") { s.briAuto = 0; s.briFix = +a[1]; }
+          else if (a[0] === "sleep") s.briSleep = +a[1];
+          else if (a[0] === "slot") { s.slots[+a[1]] = `${a[2]}/${a[3]}`; s.slots.sort(); }
+          out(briLine());
+        }
+        else if (rest.startsWith("nav")) { const v = rest.slice(3).trim(); if (["yanosik", "waze", "both"].includes(v)) s.nav = v; out(settingsLine()); }
+        else if (rest.startsWith("ota")) {
+          const a = rest.slice(3).trim();
+          if (a.startsWith("wifi ")) s.ota.wifi = a.slice(5).split("|")[0];
+          if (a === "check") {
+            if (!s.ota.wifi) { out("[ota] set the Wi-Fi first: @ ota wifi <name>|<password>"); break; }
+            s.ota.state = 1; s.ota.msg = `connecting to ${s.ota.wifi}`;
+            later(1500, () => { s.ota.state = 2; s.ota.msg = "checking for a new version"; });
+            later(3500, () => { s.ota.state = 5; s.ota.msg = "up to date (0.7.0)"; });
+          }
+          out(otaLine());
+        }
+        else if (rest.startsWith("festive")) {
+          const a = rest.slice(7).trim();
+          if (a) { showFace("joy", 6); s.asleep = 0; }
+          out(festiveLine(a === "today" ? festiveToday() : a));
+        }
+        else if (rest.startsWith("country")) s.country = rest.slice(7).trim() || "pl";
+        else if (rest.startsWith("birthday")) {
+          const m = rest.slice(8).trim().match(/^(\d)\s+(\d+)(?:-(\d+))?/);
+          if (m && +m[1] < PEOPLE) s.birthdays[+m[1]] = m[3] ? +m[2] * 100 + +m[3] : 0;
+        }
+        else out(`[app] ${rest.split(" ")[0]}: ok`);
+        break;
+      case "#": {
+        if (rest.startsWith("export")) out(soulExport(), 150);
+        else { const r = soulImport(rest); if (r) out(r, 15); }
+        break;
+      }
+      case "E": if (num >= 0 && num < EMOTIONS.length) { showFace(EMOTIONS[num]); s.asleep = 0; out(`[emotion] ${EMOTIONS[num]}`); } break;
+      case "D": if (num >= 0 && num < ACTS.length) {
+        const f = (actInfo[ACTS[num]] || [0, "curious"])[1]; showFace(EMOTIONS.includes(f) ? f : "curious", 5); s.asleep = 0;
+        out(`[act] ${ACTS[num]} (${(3 + rand() * 4).toFixed(1)}s)`);
+        if (ACTS[num].startsWith("hobby: ")) play(ACTS.indexOf(ACTS[num]) - 20, -1); else later(5000, () => out(`[act] ${ACTS[num]} done`, 0));
+      } break;
+      case "S": if (num >= 0 && num < MOODS.length) { s.mood = num; out(`[mood] now ${MOODS[num]} (console; v+0.31 e0.62 b0.12 over minutes)`); } break;
+      case "b": decide("brake", 0.82, [["scared", "scared"], ["reproach", "reproach"], ["startled", "startled"]]); break;
+      case "a": decide("accel", 0.64, [["excited", "excited"], ["strain", "strain"]]); break;
+      case "k": decide("bump", 0.70, [["ouch", "ouch"], ["surprised", "surprised"], ["annoyed", "annoyed"], ["excited", "excited"]]); break;
+      case "d": decide("roundabout", 0.75, [["dizzy", "dizzy"]]); break;
+      case "x": decide("shaken", 0.90, [["dizzy then angry", "dizzy"], ["rattled", "rattled"]]); break;
+      case "j": s.drive = "city"; decide("moving", 0.0, [["eyes on the road", "attentive"]]); later(20000, () => { s.drive = "parked"; }); break;
+      case "1": decide("tap", 0.0, [["joy", "joy"], ["curious", "curious"]]); s.asleep = 0; break;
+      case "2": decide("double tap", 0.0, [["curious + wink", "curious"]]); break;
+      case "3": s.muted ^= 1; out(`[sound] ${s.muted ? "muted" : "on"}`); showFace("sleepy", 2); break;
+      case "p": decide("petting", 0.0, [["petted", "petted"]]); break;
+      case "g": out(["[greeting] hi (away 0.4 days)", "[act] greeting (6.0s)"]); showFace("hi", 6); s.asleep = 0; break;
+      case "s": s.asleep = 1; out("[sleep] falling asleep"); break;
+      case "5": case "6": s.mode = +c - 5; break;
+      case "+": case "-": s.sens = clamp(s.sens * (c === "+" ? 1.25 : 0.8), 0.25, 4); out(settingsLine()); break;
+      case "c": out("[imu] mount calibration cleared - learning it again"); break;
+      case "u": s.learning ^= 1; out(`[settings] learning ${s.learning ? "on" : "off"}`); break;
+      case "H": out(`[temp] cabin forced: ${pick(["32", "6", "nan"])} C`); break;
+      case "T": out(/^\d{4}-\d\d-\d\d \d\d:\d\d:\d\d$/.test(rest) ? "[rtc] clock set" : "[rtc] expected T YYYY-MM-DD HH:MM:SS"); break;
+      case "W": out("[portal] settings Wi-Fi open: CarBuddy-setup (QR on screen)"); break;
+      case "i": out([`[mood] v+0.38 a0.41 e0.66 aff0.52 bored0.18 | reactivity 1.04 tempo 0.92 asleep ${s.asleep} resting ${RESTING[s.mood]}`, settingsLine()]); break;
+      case "I": out(s.names.map((n, i) => `[memory] p${i} ${n}: trips ${[42, 7, 1][i]}, bond ${["0.71", "0.38", "0.05"][i]}, harsh ${["0.18", "0.31", "0.00"][i]}${i === s.driver ? " (active)" : ""}`)); break;
+      case "P": s.driver = (s.driver + 1) % PEOPLE; out(`[memory] driver now ${s.names[s.driver]}`); break;
+      case "K": out(`[phone] pairing open for ${s.names[s.driver]} (2 min)`); break;
+      case "J": s.phones[s.driver] = 0; out(`[phone] forgot the phones of ${s.names[s.driver]}`); break;
+      case "q": decide("call", 0.0, [["attentive", "attentive"]]); break;
+      case "n": decide("notification", 4.0, [["curious", "curious"], ["ignore", "neutral"]]); break;
+      case "M": decide("music", 0.0, [["dances", "happy"], ["sways", "relaxed"]]); break;
+      case "N": decide("track", 0.0, [["new dance decision", "curious"]]); break;
+      case "V": { if (num >= 0 && num < PEOPLE) s.driver = num; out(`[rel] ${s.names[s.driver]} arrived: usual`); showFace("joy", 3); break; }
+      case "C": out(`[celebrate] ${["star", "cake", "trophy"][clamp((num || 1) - 1, 0, 2)]}`); break;
+      case "Q": s.mood = (s.mood + 1) % MOODS.length; out(`[mood] now ${MOODS[s.mood]} (console)`); break;
+      case "A": out(`[act] ${pick(ACTS)} (4.0s)`); break;
+      case "O": out(`[rel] meet as: ${pick(["jealous", "stranger", "usual"])}`); break;
+      case "G": { const g = GENRES[num >= 1 && num <= 5 ? num : 1 + Math.floor(rand() * 5)]; out(`[music] dancing: ${g}`); showFace(`x-dance-${g}`, 8); break; }
+      case "L": case "R": case "F": case "B": out(`[gforce] ${({ L: "left", R: "right", F: "braking", B: "accelerating" })[c]} 2 s`); showFace(({ L: "gforce-left", R: "gforce-right", F: "gforce-brake", B: "gforce-accel" })[c], 3); break;
+      case "l": case "r": decide("turn", 0.4, [["lean", "strain"]]); break;
+      case "v": out([`[yanosik] ${s.yanosik.length} saved notification(s)`, ...s.yanosik.map(([w, cat, t, m]) => `[yanosik] ${w} | cat ${cat} | ${t} | ${m}`)]); break;
+      case "f": s.yanosik = []; out("[yanosik] log cleared"); break;
+      case "y": if (num >= 0 && num < 8) { out(`[yanosik] alert: ${YANO[num]} ${parseInt(rest.split(/\s+/)[1]) || 600} m`); showFace("attentive", 3); } break;
+      case "e": out(`[emotion] ${pick(EMOTIONS)}`); break;
+      case "t": s.telemetry = !s.telemetry; break;
+      case "~": out(`[beat] ${rest || "off"}`); break;
+      case "X": case "Y": case "Z": case "!": out(rest.startsWith("YES") ? "[console] (demo: nothing erased)" : `[console] ${c} erases data: send "${c} YES" to confirm`); break;
+      default: out(["CarBuddy console (events go through the same path as real sensors):",
+        "  b brake  a accelerate  l/r turn  k bump  d roundabout  x shaken  j moving again",
+        "  (demo board: the full help is in README.md, \"Serial console\")"]);
+    }
+  }
+  function tick() {  // time passes on the demo board
+    s.garden.water = Math.max(0, s.garden.water - 0.002);
+    s.dreams = s.dreams.map(v => Math.max(0, v - 0.0005));
+    if (rand() < 0.04) out(`[decide] idle mood v+0.40 a0.35 | glance 40%, look at driver 30%, nothing 30% -> ${pick(["glance", "look at driver", "nothing"])}`, 0);
+    if (running) timers.push(setTimeout(tick, 1500));
+  }
+  function start() {
+    running = true; timers = [];
+    out(["ESP-ROM:esp32s3-20210327", "[boot] CarBuddy (demo board: no hardware, the answers are simulated)", `[memory] driver ${s.names[s.driver]}, 42 trips together`, "[display] 240x280 ready"], 120);
+    timers.push(setTimeout(tick, 1500));
+  }
+  function stop() { running = false; timers.forEach(clearTimeout); timers = []; }
+  function lost() { if (B.connected && link?.kind === "demo") window.__demoLost(); }
+  // A command that a card or the gallery stands for plays that card's animation on the virtual
+  // screen - the exact one, not just a matching mood.
+  function commandShown(line) {
+    command(line);
+    const cmd = line.trim(), f = faceForCommand[cmd] || (catalog ? catalog.groups.flatMap(g => g.ids).find(id => commandFor(id) === cmd) : null);
+    if (f && faceLib && faceLib.has(f)) showFace(f, 6);
+  }
+  return { start, stop, write: line => commandShown(line), lost };
+})();
+window.__demoLost = () => lost(null);
+function openDemo(again = false) {
+  if (!DEMO) return;
+  stopWaiting();
+  startConnection({ kind: "demo", write: (text) => { const l = text.replace(/\n$/, ""); setTimeout(() => demo.write(l), 5); } },
+    again ? "connected to the demo board again (it restarted)" : "connected to the demo board (simulation, no hardware)");
+  demo.start();
+}
+
+// ---------------------------------------------------------------------------------------------
+// Start
+async function loadCatalog() {
+  if (window.CARBUDDY_FACES) return window.CARBUDDY_FACES;
+  try { const r = await fetch("faces.json"); if (r.ok) return await r.json(); } catch {}
+  return null;
+}
+// Per driver: "Sparuj telefon", or "Sparowano" once a phone is paired to them.
+function renderPhones() {
+  for (const p of EVERYONE) { const nm = $(`nmName${p}`); if (nm && B.drivers[p]?.name) nm.textContent = B.drivers[p].name; }
+  for (const p of EVERYONE) {
+    const btn = $(`pairBtn${p}`), forget = $(`forgetBtn${p}`);
+    if (!btn) continue;
+    const phones = parseInt(B.drivers[p]?.phones) || 0;
+    const pairing = B.pairing && B.pairing.p === p && Date.now() < B.pairing.until;
+    btn.textContent = pairing ? "Paruję… (kliknij, żeby przerwać) – na iPhonie: Ustawienia → Bluetooth → CarBuddy" : phones ? "Sparowano ✓" : "Sparuj telefon";
+    btn.classList.toggle("on", phones > 0 && !pairing);
+    btn.classList.toggle("primary", !phones && !pairing);
+    btn.dataset.paired = phones && !pairing ? "1" : "";
+    forget.classList.toggle("hidden", !phones || pairing);
+  }
+}
+
+// The owner's panel lists nothing of what he can do - finding that out on the road is the fun.
+// Only his people, the phone and the settings; "?dev" (or "?demo") shows the whole catalogue.
+function applyView() {
+  if (DEV || DEMO) return;
+  const prog = LEVEL === "prog";
+  if (!prog) document.body.classList.add("owner");
+  const keep = prog ? ["phone", "relations", "yanosik", "settings"] : ["relations", "settings"];
+  for (const b of [...$("tabs").children]) if (!keep.includes(b.dataset.tab)) b.remove();
+  const label = { phone: "Telefon", relations: "Kierowcy", yanosik: "Yanosik", settings: "Ustawienia" };
+  for (const b of $("tabs").children) b.textContent = label[b.dataset.tab];
+  // Programmer: the real phone and Yanosik's saved notifications stay; nothing that plays a behaviour.
+  [...panels.phone.children].slice(0, -1).forEach(n => n.remove());  // only "Prawdziwy telefon"
+  [...panels.yanosik.children].forEach(n => { if (/Zdarzenia/.test(n.querySelector("h2")?.textContent || "")) n.remove(); });
+  [...panels.relations.children].slice(1).forEach(n => n.remove());  // only who is who
+  const rel = panels.relations.firstElementChild;
+  rel.querySelector("h2").textContent = "Kim jest dla niego każda osoba";
+  rel.querySelector(".note").textContent = "Wybierz, kim jest dla niego każda osoba. Jak się przy niej zachowa, decyduje już on sam – im więcej wspólnych tras, tym bardziej się przywiązuje.";
+  rel.querySelectorAll(".sliders").forEach(n => n.remove());  // how he behaves is his own business
+  rel.querySelectorAll(":scope > .btnrow").forEach(n => n.remove());  // "Odśwież (U)": it refreshes by itself
+  panels.relations.prepend(el("section", {}, el("h2", { text: "Kierowcy" }),
+    el("p", { class: "note", text: "Imię – tak nazywa kierowcę w panelu i w urodziny. Telefon – po nim CarBuddy poznaje, kto jedzie: kliknij „Sparuj telefon”, a potem w ciągu 2 minut na iPhonie wejdź w Ustawienia → Bluetooth → CarBuddy. Bez komputera: przytrzymaj palec na jego ekranie przez 10 sekund – telefon trafi do następnego kierowcy." }),
+    el("div", { class: "slots" }, EVERYONE.map(p => {
+      const name = el("input", { maxlength: 22, placeholder: "nowe imię", style: "width:11em" });
+      const save = () => { const v = name.value.replace(/[\r\n|]/g, " ").trim(); if (!v) return; send(`@ name ${p} ${v}`); sendLater(0.3, "U", true); sendLater(0.6, "@ app", true); name.value = ""; toast("Zapisano imię"); };
+      const pair = needs(el("button", { id: `pairBtn${p}`, class: "primary", onclick: () => {
+        if ($(`pairBtn${p}`).dataset.paired) return;  // already paired: "Sparowano"
+        if (B.pairing && B.pairing.p === p && Date.now() < B.pairing.until) { send("@ pair stop"); B.pairing = null; renderPhones(); return; }
+        send(`@ pair ${p}`);
+      } }, "Sparuj telefon"));
+      const forget = needs(el("button", { id: `forgetBtn${p}`, class: "hidden", title: "Usuń sparowany telefon", onclick: () => {
+        if (confirm(`Usunąć telefon kierowcy ${B.relations[p]?.name || defaultNames[p]}? Trzeba będzie sparować go od nowa.`)) { send(`@ forget ${p}`); sendLater(0.5, "@ app", true); }
+      } }, "Usuń telefon"));
+      return el("div", { class: "slotrow" }, el("span", { id: `nmName${p}`, text: defaultNames[p], style: "min-width:8em;font-weight:600" }), name,
+        needs(el("button", { onclick: save }, "Zmień imię")), pair, forget);
+    }))));
+  renderPhones();
+  for (const p of [panels.relations, panels.settings])
+    p.querySelectorAll("button").forEach(b => { if (/^\s*(🧪\s*)?Test/.test(b.textContent)) b.remove(); });
+  if (!keep.includes(tab)) tab = "relations";
+}
+(async () => {
+  if (DEMO) { $("demoTag").classList.remove("hidden"); document.title = "CarBuddy Panel (demo)"; }
+  else if (!serialSupported()) { $("noSerial").classList.remove("hidden"); $("connect").disabled = true; }
+  catalog = await loadCatalog();
+  buildGallery();
+  renderActs(); renderMoods(); renderHobbies(); renderDreams(); renderGarden(); renderDrawings(); renderState();
+  setConnected(false);
+  applyView();
+  showTab(tab);
+  append(DEMO ? "[app] demo mode: press „Połącz (demo)” – a simulated board answers like the real one"
+              : serialSupported() ? "[app] connect the board with a USB cable and press „Połącz przez USB”" : "[app] Web Serial is missing in this browser: use Chrome or Edge");
+})();
+</script>
+</body>
+</html>

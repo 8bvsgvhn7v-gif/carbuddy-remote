@@ -1,0 +1,6 @@
+{
+  "name": "CarBuddy",
+  "version": "0.8.1",
+  "new_install_prompt_erase": true,
+  "builds": [{"chipFamily": "ESP32-S3", "parts": [{"path": "carbuddy-amoled18-full.bin", "offset": 0}]}]
+}
